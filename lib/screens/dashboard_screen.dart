@@ -3,6 +3,7 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import '../models/waste_report.dart';
 import '../services/local_storage.dart';
+import '../theme/app_theme.dart';
 import 'add_report_screen.dart';
 import 'edit_report_screen.dart';
 import 'login_screen.dart';
@@ -18,6 +19,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
   List<WasteReport> _reports = [];
   bool _isLoading = true;
   String _activeTab = 'All'; // 'All', 'In Progress', 'Resolved'
+  String _activeUser = 'Resident Citizen';
 
   @override
   void initState() {
@@ -25,57 +27,76 @@ class _DashboardScreenState extends State<DashboardScreen> {
     _loadData();
   }
 
-  Future<void> _loadData() async {
-    setState(() => _isLoading = true);
-    final data = await LocalStorageService.getReports();
-    // Sort reverse chronological order
-    data.sort((a, b) => b.createdAt.compareTo(a.createdAt));
-    setState(() {
-      _reports = data;
-      _isLoading = false;
-    });
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _loadData();
   }
 
-  void _deleteReport(String id) {
+  Future<void> _loadData() async {
+    final userData = await LocalStorageService.getCurrentUser();
+    final data = await LocalStorageService.getAllReports();
+
+    // Sort reverse chronological
+    data.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+
+    if (mounted) {
+      setState(() {
+        _activeUser = userData?['email'] ?? 'Resident Citizen';
+        _reports = data;
+        _isLoading = false;
+      });
+    }
+  }
+
+  void _withdrawReport(String id) {
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
-        backgroundColor: const Color(0xFFFAF4EC),
+        backgroundColor: AppColors.citizenCardSurface,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         title: const Text(
           'Withdraw Complaint',
-          style: TextStyle(color: Color(0xFF331D0A), fontWeight: FontWeight.bold),
+          style: TextStyle(color: AppColors.primaryTextLight, fontWeight: FontWeight.bold),
         ),
         content: const Text(
-          'Are you sure you want to withdraw this waste report?',
-          style: TextStyle(color: Color(0xFF331D0A)),
+          'Are you sure you want to withdraw this waste report? This action cannot be undone.',
+          style: TextStyle(color: AppColors.secondaryTextLight),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
-            child: const Text('Cancel', style: TextStyle(color: Color(0xFF331D0A))),
+            child: const Text('Cancel', style: TextStyle(color: AppColors.primaryTextLight)),
           ),
           ElevatedButton(
-            style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFB84A39)), // Terracotta Red
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.urgentDanger,
+              foregroundColor: AppColors.primaryTextDark,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+            ),
             onPressed: () async {
               Navigator.pop(ctx);
               await LocalStorageService.deleteReport(id);
               _loadData();
             },
-            child: const Text('Withdraw', style: TextStyle(color: Colors.white)),
+            child: const Text('Withdraw', style: TextStyle(fontWeight: FontWeight.bold)),
           ),
         ],
       ),
     );
   }
 
-  void _logout() async {
+  Future<void> _logout() async {
     await LocalStorageService.logout();
     if (mounted) {
       Navigator.of(context).pushAndRemoveUntil(
         MaterialPageRoute(
           builder: (context) => LoginScreen(
             onLoginSuccess: () {
-              Navigator.pushReplacementNamed(context, '/');
+              Navigator.of(context).pushAndRemoveUntil(
+                MaterialPageRoute(builder: (_) => const TrashTrackWrapper()),
+                (route) => false,
+              );
             },
           ),
         ),
@@ -88,7 +109,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
     if (_activeTab == 'Resolved') {
       return _reports.where((r) => r.status.toLowerCase() == 'resolved').toList();
     } else if (_activeTab == 'In Progress') {
-      return _reports.where((r) => r.status.toLowerCase() != 'resolved').toList();
+      return _reports.where((r) => r.status.toLowerCase() == 'in progress').toList();
     }
     return _reports;
   }
@@ -96,61 +117,61 @@ class _DashboardScreenState extends State<DashboardScreen> {
   @override
   Widget build(BuildContext context) {
     final resolvedCount = _reports.where((r) => r.status.toLowerCase() == 'resolved').length;
-    final inProgressCount = _reports.length - resolvedCount;
+    final inProgressCount = _reports.where((r) => r.status.toLowerCase() == 'in progress').length;
 
     return Scaffold(
-      backgroundColor: const Color(0xFFF4E2CD), // Linen/Cream Primary Background
+      backgroundColor: AppColors.citizenBackground,
       appBar: AppBar(
-        backgroundColor: const Color(0xFF331D0A), // Deep Espresso Header
+        backgroundColor: AppColors.primaryTextLight,
         elevation: 0,
         title: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: const [
             Text(
               'TrashTrack Citizen Portal',
-              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Color(0xFFF4E2CD)),
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: AppColors.primaryTextDark),
             ),
             Text(
               'Community Waste Monitoring & Resolution Tracking',
-              style: TextStyle(fontSize: 11, color: Color(0xFFFAF4EC)),
+              style: TextStyle(fontSize: 11, color: AppColors.secondaryTextDark),
             ),
           ],
         ),
         actions: [
           IconButton(
-            icon: const Icon(Icons.refresh, color: Color(0xFFF4E2CD)),
-            tooltip: 'Refresh Reports',
+            icon: const Icon(Icons.refresh, color: AppColors.primaryTextDark),
+            tooltip: 'Refresh Feed',
             onPressed: _loadData,
           ),
           IconButton(
-            icon: const Icon(Icons.logout, color: Color(0xFFF4E2CD)),
+            icon: const Icon(Icons.logout, color: AppColors.primaryTextDark),
             tooltip: 'Logout',
             onPressed: _logout,
           ),
         ],
       ),
       drawer: Drawer(
-        backgroundColor: const Color(0xFFF4E2CD),
+        backgroundColor: AppColors.citizenBackground,
         child: ListView(
           padding: EdgeInsets.zero,
           children: [
-            const UserAccountsDrawerHeader(
-              decoration: BoxDecoration(color: Color(0xFF331D0A)),
-              accountName: Text('Registered Citizen', style: TextStyle(fontWeight: FontWeight.bold, color: Color(0xFFF4E2CD))),
-              accountEmail: Text('citizen@trashtrack.local', style: TextStyle(color: Color(0xFFFAF4EC))),
-              currentAccountPicture: CircleAvatar(
-                backgroundColor: Color(0xFFF4E2CD),
-                child: Icon(Icons.person, color: Color(0xFF331D0A), size: 40),
+            UserAccountsDrawerHeader(
+              decoration: const BoxDecoration(color: AppColors.primaryTextLight),
+              accountName: Text(_activeUser, style: const TextStyle(fontWeight: FontWeight.bold, color: AppColors.primaryTextDark)),
+              accountEmail: const Text('Registered Citizen User', style: TextStyle(color: AppColors.secondaryTextDark)),
+              currentAccountPicture: const CircleAvatar(
+                backgroundColor: AppColors.citizenBackground,
+                child: Icon(Icons.person, color: AppColors.primaryTextLight, size: 36),
               ),
             ),
             ListTile(
-              leading: const Icon(Icons.dashboard, color: Color(0xFF331D0A)),
-              title: const Text('My Complaints Feed', style: TextStyle(color: Color(0xFF331D0A), fontWeight: FontWeight.w600)),
+              leading: const Icon(Icons.dashboard, color: AppColors.primaryTextLight),
+              title: const Text('My Complaints Feed', style: TextStyle(color: AppColors.primaryTextLight, fontWeight: FontWeight.w600)),
               onTap: () => Navigator.pop(context),
             ),
             ListTile(
-              leading: const Icon(Icons.add_a_photo, color: Color(0xFF331D0A)),
-              title: const Text('File New Complaint', style: TextStyle(color: Color(0xFF331D0A), fontWeight: FontWeight.w600)),
+              leading: const Icon(Icons.add_a_photo, color: AppColors.primaryTextLight),
+              title: const Text('File New Complaint', style: TextStyle(color: AppColors.primaryTextLight, fontWeight: FontWeight.w600)),
               onTap: () async {
                 Navigator.pop(context);
                 await Navigator.push(
@@ -160,31 +181,31 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 _loadData();
               },
             ),
-            const Divider(color: Color(0xFF331D0A)),
+            const Divider(color: AppColors.borderLight),
             ListTile(
-              leading: const Icon(Icons.logout, color: Color(0xFFB84A39)),
-              title: const Text('Log Out', style: TextStyle(color: Color(0xFFB84A39), fontWeight: FontWeight.w600)),
+              leading: const Icon(Icons.logout, color: AppColors.urgentDanger),
+              title: const Text('Log Out', style: TextStyle(color: AppColors.urgentDanger, fontWeight: FontWeight.w600)),
               onTap: _logout,
             ),
           ],
         ),
       ),
       body: _isLoading
-          ? const Center(child: CircularProgressIndicator(color: Color(0xFF331D0A)))
+          ? const Center(child: CircularProgressIndicator(color: AppColors.primaryTextLight))
           : Column(
               children: [
-                // Top Community Header Banner
-                _buildCitizenHeaderBanner(inProgressCount: inProgressCount, resolvedCount: resolvedCount),
+                // Top Community Action & Stats Banner
+                _buildHeaderBanner(inProgressCount: inProgressCount, resolvedCount: resolvedCount),
 
-                // Filter Tabs
+                // Filter Tabs Bar
                 _buildFilterTabs(),
 
-                // Complaints List View
+                // Complaints Feed List View
                 Expanded(
                   child: _filteredReports.isEmpty
                       ? _buildEmptyState()
                       : ListView.builder(
-                          padding: const EdgeInsets.fromLTRB(16, 8, 16, 80),
+                          padding: const EdgeInsets.fromLTRB(16, 8, 16, 88),
                           itemCount: _filteredReports.length,
                           itemBuilder: (ctx, index) {
                             final report = _filteredReports[index];
@@ -195,12 +216,12 @@ class _DashboardScreenState extends State<DashboardScreen> {
               ],
             ),
       floatingActionButton: FloatingActionButton.extended(
-        backgroundColor: const Color(0xFF331D0A), // Primary Dark #331D0A
+        backgroundColor: AppColors.primaryTextLight,
         elevation: 4,
-        icon: const Icon(Icons.add_a_photo, color: Color(0xFFF4E2CD)), // Linen/Cream #F4E2CD
+        icon: const Icon(Icons.add_a_photo, color: AppColors.primaryTextDark),
         label: const Text(
           'REPORT WASTE SPOT',
-          style: TextStyle(color: Color(0xFFF4E2CD), fontWeight: FontWeight.bold),
+          style: TextStyle(color: AppColors.primaryTextDark, fontWeight: FontWeight.bold),
         ),
         onPressed: () async {
           await Navigator.push(
@@ -213,11 +234,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
     );
   }
 
-  Widget _buildCitizenHeaderBanner({required int inProgressCount, required int resolvedCount}) {
+  Widget _buildHeaderBanner({required int inProgressCount, required int resolvedCount}) {
     return Container(
       width: double.infinity,
       decoration: const BoxDecoration(
-        color: Color(0xFF331D0A), // Primary Dark Deep Espresso
+        color: AppColors.primaryTextLight,
         borderRadius: BorderRadius.only(
           bottomLeft: Radius.circular(20),
           bottomRight: Radius.circular(20),
@@ -226,23 +247,23 @@ class _DashboardScreenState extends State<DashboardScreen> {
       padding: const EdgeInsets.fromLTRB(16, 4, 16, 20),
       child: Column(
         children: [
-          // Action banner callout
+          // Banner callout
           Container(
             padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(
               color: Colors.white.withValues(alpha: 0.1),
               borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: const Color(0xFFF4E2CD).withValues(alpha: 0.3)),
+              border: Border.all(color: AppColors.primaryTextDark.withValues(alpha: 0.3)),
             ),
             child: Row(
               children: [
                 Container(
                   padding: const EdgeInsets.all(8),
                   decoration: const BoxDecoration(
-                    color: Color(0xFFF4E2CD),
+                    color: AppColors.primaryTextDark,
                     shape: BoxShape.circle,
                   ),
-                  child: const Icon(Icons.camera_alt, color: Color(0xFF331D0A), size: 22),
+                  child: const Icon(Icons.camera_alt, color: AppColors.primaryTextLight, size: 22),
                 ),
                 const SizedBox(width: 12),
                 Expanded(
@@ -250,21 +271,21 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: const [
                       Text(
-                        'Spotted illegal dumping or overflowing bins?',
-                        style: TextStyle(color: Color(0xFFF4E2CD), fontWeight: FontWeight.bold, fontSize: 13),
+                        'Spotted illegal dumping or overflow?',
+                        style: TextStyle(color: AppColors.primaryTextDark, fontWeight: FontWeight.bold, fontSize: 13),
                       ),
                       SizedBox(height: 2),
                       Text(
-                        'Upload photo evidence & GPS coordinates to notify municipal crews.',
-                        style: TextStyle(color: Color(0xFFFAF4EC), fontSize: 11),
+                        'Attach photo evidence & GPS coordinates to notify BBMP crews.',
+                        style: TextStyle(color: AppColors.secondaryTextDark, fontSize: 11),
                       ),
                     ],
                   ),
                 ),
                 ElevatedButton(
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFFF4E2CD),
-                    foregroundColor: const Color(0xFF331D0A),
+                    backgroundColor: AppColors.primaryTextDark,
+                    foregroundColor: AppColors.primaryTextLight,
                     padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                   ),
@@ -280,16 +301,16 @@ class _DashboardScreenState extends State<DashboardScreen> {
               ],
             ),
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: 14),
           // Counters
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceAround,
             children: [
-              _buildCitizenCounter('Total Logged', _reports.length.toString(), Icons.assignment),
+              _buildCounter('Total Reports', _reports.length.toString(), Icons.assignment, color: AppColors.primaryTextDark),
               Container(height: 20, width: 1, color: Colors.white24),
-              _buildCitizenCounter('In Progress', inProgressCount.toString(), Icons.hourglass_bottom, color: const Color(0xFFD97706)),
+              _buildCounter('In Progress', inProgressCount.toString(), Icons.hourglass_bottom, color: AppColors.statusInProgress),
               Container(height: 20, width: 1, color: Colors.white24),
-              _buildCitizenCounter('Resolved ✅', resolvedCount.toString(), Icons.task_alt, color: const Color(0xFF86EFAC)),
+              _buildCounter('Resolved ✅', resolvedCount.toString(), Icons.task_alt, color: AppColors.statusResolved),
             ],
           ),
         ],
@@ -297,21 +318,21 @@ class _DashboardScreenState extends State<DashboardScreen> {
     );
   }
 
-  Widget _buildCitizenCounter(String label, String count, IconData icon, {Color? color}) {
+  Widget _buildCounter(String label, String count, IconData icon, {required Color color}) {
     return Row(
       children: [
-        Icon(icon, size: 16, color: color ?? const Color(0xFFF4E2CD)),
+        Icon(icon, size: 18, color: color),
         const SizedBox(width: 6),
         Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
               count,
-              style: const TextStyle(color: Color(0xFFF4E2CD), fontWeight: FontWeight.bold, fontSize: 15),
+              style: const TextStyle(color: AppColors.primaryTextDark, fontWeight: FontWeight.bold, fontSize: 16),
             ),
             Text(
               label,
-              style: const TextStyle(color: Color(0xFFFAF4EC), fontSize: 10),
+              style: const TextStyle(color: AppColors.secondaryTextDark, fontSize: 10),
             ),
           ],
         ),
@@ -324,7 +345,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
       child: Row(
         children: [
-          _buildTabChip('All', 'All Complaints (${_reports.length})'),
+          _buildTabChip('All', 'All Reports (${_reports.length})'),
           const SizedBox(width: 8),
           _buildTabChip('In Progress', 'In Progress'),
           const SizedBox(width: 8),
@@ -342,11 +363,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
       labelStyle: TextStyle(
         fontSize: 12,
         fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
-        color: isSelected ? const Color(0xFFF4E2CD) : const Color(0xFF331D0A),
+        color: isSelected ? AppColors.primaryTextDark : AppColors.primaryTextLight,
       ),
-      selectedColor: const Color(0xFF331D0A),
-      backgroundColor: const Color(0xFFFAF4EC),
-      side: BorderSide(color: isSelected ? const Color(0xFF331D0A) : const Color(0xFFEAD7C0)),
+      selectedColor: AppColors.primaryTextLight,
+      backgroundColor: AppColors.citizenCardSurface,
+      side: BorderSide(color: isSelected ? AppColors.primaryTextLight : AppColors.borderLight),
       onSelected: (selected) {
         if (selected) {
           setState(() => _activeTab = tabKey);
@@ -359,29 +380,22 @@ class _DashboardScreenState extends State<DashboardScreen> {
     final bool isResolved = report.status.toLowerCase() == 'resolved';
     final bool isInProgress = report.status.toLowerCase() == 'in progress';
 
-    // Status Styling based on user spec:
-    // Eco Accent (Resolved / Cleaned): Olive Forest #3A5A40
-    // In-Progress Accent: Warm Amber #D97706
-    // Urgent Alert: Terracotta Red #B84A39
     String statusText;
     Color statusBgColor;
-    Color statusTextColor;
+    Color statusTextColor = AppColors.primaryTextDark;
     IconData statusIcon;
 
     if (isResolved) {
       statusText = 'CLEANUP RESOLVED & COMPLETED ✅';
-      statusBgColor = const Color(0xFF3A5A40); // Eco Accent Olive Forest #3A5A40
-      statusTextColor = const Color(0xFFF4E2CD); // Linen/Cream #F4E2CD
+      statusBgColor = AppColors.statusResolved;
       statusIcon = Icons.check_circle;
     } else if (isInProgress) {
       statusText = 'MUNICIPAL CREW DISPATCHED 🛠️';
-      statusBgColor = const Color(0xFFD97706); // Warm Amber #D97706
-      statusTextColor = const Color(0xFFFAF4EC);
+      statusBgColor = AppColors.statusInProgress;
       statusIcon = Icons.construction;
     } else {
       statusText = 'COMPLAINT PENDING REVIEW ⏳';
-      statusBgColor = const Color(0xFFD97706); // Warm Amber #D97706
-      statusTextColor = const Color(0xFFFAF4EC);
+      statusBgColor = AppColors.statusInProgress;
       statusIcon = Icons.hourglass_top;
     }
 
@@ -392,217 +406,229 @@ class _DashboardScreenState extends State<DashboardScreen> {
       } catch (_) {}
     }
 
-    return Card(
-      elevation: 2,
-      margin: const EdgeInsets.only(bottom: 14),
-      color: const Color(0xFFFAF4EC), // Soft Warm White Surface Card #FAF4EC
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(12.0),
-        side: BorderSide(
-          color: isResolved ? const Color(0xFF3A5A40) : const Color(0xFFEAD7C0),
-          width: isResolved ? 1.5 : 1,
+    return GestureDetector(
+      onTap: () async {
+        await Navigator.push(
+          context,
+          MaterialPageRoute(builder: (context) => EditReportScreen(report: report)),
+        );
+        _loadData();
+      },
+      child: Card(
+        elevation: 2,
+        margin: const EdgeInsets.only(bottom: 14),
+        color: AppColors.citizenCardSurface,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(12.0),
+          side: BorderSide(
+            color: isResolved ? AppColors.statusResolved : AppColors.borderLight,
+            width: isResolved ? 1.5 : 1,
+          ),
         ),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // Resolution Status Ribbon
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
-            decoration: BoxDecoration(
-              color: statusBgColor,
-              borderRadius: const BorderRadius.only(
-                topLeft: Radius.circular(12.0),
-                topRight: Radius.circular(12.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Status Header Ribbon
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
+              decoration: BoxDecoration(
+                color: statusBgColor,
+                borderRadius: const BorderRadius.only(
+                  topLeft: Radius.circular(12.0),
+                  topRight: Radius.circular(12.0),
+                ),
+              ),
+              child: Row(
+                children: [
+                  Icon(statusIcon, color: statusTextColor, size: 18),
+                  const SizedBox(width: 8),
+                  Text(
+                    statusText,
+                    style: TextStyle(
+                      color: statusTextColor,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 12,
+                      letterSpacing: 0.3,
+                    ),
+                  ),
+                  const Spacer(),
+                  Text(
+                    report.id,
+                    style: TextStyle(fontSize: 10, color: statusTextColor, fontWeight: FontWeight.bold),
+                  ),
+                  if (report.isUrgent) ...[
+                    const SizedBox(width: 6),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: AppColors.urgentDanger,
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                      child: const Text(
+                        'URGENT',
+                        style: TextStyle(color: AppColors.primaryTextDark, fontSize: 9, fontWeight: FontWeight.bold),
+                      ),
+                    ),
+                  ],
+                ],
               ),
             ),
-            child: Row(
-              children: [
-                Icon(statusIcon, color: statusTextColor, size: 18),
-                const SizedBox(width: 8),
-                Text(
-                  statusText,
-                  style: TextStyle(
-                    color: statusTextColor,
-                    fontWeight: FontWeight.bold,
-                    fontSize: 12,
-                    letterSpacing: 0.3,
-                  ),
-                ),
-                const Spacer(),
-                Text(
-                  report.id,
-                  style: TextStyle(fontSize: 10, color: statusTextColor, fontWeight: FontWeight.bold),
-                ),
-                if (report.isUrgent) ...[
-                  const SizedBox(width: 6),
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFB84A39), // Urgent Alert Terracotta Red #B84A39
-                      borderRadius: BorderRadius.circular(4),
-                    ),
-                    child: const Text(
-                      'URGENT',
-                      style: TextStyle(color: Colors.white, fontSize: 9, fontWeight: FontWeight.bold),
-                    ),
-                  ),
-                ],
-              ],
-            ),
-          ),
 
-          // Card Body: Photo & Details
-          Padding(
-            padding: const EdgeInsets.all(14.0),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    // Photo Thumbnail Preview
-                    Container(
-                      width: 85,
-                      height: 85,
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFF4E2CD),
-                        borderRadius: BorderRadius.circular(8),
-                        border: Border.all(color: const Color(0xFF331D0A).withValues(alpha: 0.2)),
+            // Card Body: Image & Details
+            Padding(
+              padding: const EdgeInsets.all(14.0),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      // Photo Thumbnail
+                      Container(
+                        width: 85,
+                        height: 85,
+                        decoration: BoxDecoration(
+                          color: AppColors.citizenBackground,
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: AppColors.borderLight),
+                        ),
+                        child: decodedImage != null
+                            ? ClipRRect(
+                                borderRadius: BorderRadius.circular(7),
+                                child: Image.memory(decodedImage, width: 85, height: 85, fit: BoxFit.cover),
+                              )
+                            : Column(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: const [
+                                  Icon(Icons.delete_outline, color: AppColors.primaryTextLight, size: 30),
+                                  SizedBox(height: 2),
+                                  Text('Photo', style: TextStyle(fontSize: 10, color: AppColors.secondaryTextLight)),
+                                ],
+                              ),
                       ),
-                      child: decodedImage != null
-                          ? ClipRRect(
-                              borderRadius: BorderRadius.circular(7),
-                              child: Image.memory(decodedImage, width: 85, height: 85, fit: BoxFit.cover),
-                            )
-                          : Column(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: const [
-                                Icon(Icons.delete_outline, color: Color(0xFF331D0A), size: 30),
-                                SizedBox(height: 2),
-                                Text('Photo', style: TextStyle(fontSize: 10, color: Color(0xFF331D0A))),
-                              ],
-                            ),
-                    ),
-                    const SizedBox(width: 14),
+                      const SizedBox(width: 14),
 
-                    // Details
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
-                            children: [
-                              Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                                decoration: BoxDecoration(
-                                  color: const Color(0xFFF4E2CD),
-                                  borderRadius: BorderRadius.circular(6),
-                                  border: Border.all(color: const Color(0xFF331D0A).withValues(alpha: 0.2)),
-                                ),
-                                child: Text(
-                                  report.category,
-                                  style: const TextStyle(
-                                    color: Color(0xFF331D0A),
-                                    fontWeight: FontWeight.bold,
-                                    fontSize: 11,
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 6),
-                          Row(
-                            children: [
-                              const Icon(Icons.location_on, color: Color(0xFFB84A39), size: 16),
-                              const SizedBox(width: 4),
-                              Expanded(
-                                child: Text(
-                                  report.location,
-                                  style: const TextStyle(
-                                    fontWeight: FontWeight.bold,
-                                    fontSize: 14,
-                                    color: Color(0xFF331D0A),
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                          if (report.latitude != null && report.longitude != null) ...[
-                            const SizedBox(height: 4),
+                      // Details
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
                             Row(
                               children: [
-                                const Icon(Icons.gps_fixed, size: 12, color: Color(0xFF331D0A)),
-                                const SizedBox(width: 4),
-                                Text(
-                                  'GPS: ${report.latitude!.toStringAsFixed(4)}, ${report.longitude!.toStringAsFixed(4)}',
-                                  style: const TextStyle(
-                                    fontSize: 11,
-                                    color: Color(0xFF331D0A),
-                                    fontWeight: FontWeight.w600,
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                  decoration: BoxDecoration(
+                                    color: AppColors.citizenBackground,
+                                    borderRadius: BorderRadius.circular(6),
+                                    border: Border.all(color: AppColors.borderLight),
+                                  ),
+                                  child: Text(
+                                    report.category,
+                                    style: const TextStyle(
+                                      color: AppColors.primaryTextLight,
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 11,
+                                    ),
                                   ),
                                 ),
                               ],
                             ),
-                          ],
-                          if (report.notes != null && report.notes!.isNotEmpty) ...[
                             const SizedBox(height: 6),
-                            Text(
-                              '"${report.notes}"',
-                              style: const TextStyle(
-                                fontSize: 12,
-                                fontStyle: FontStyle.italic,
-                                color: Color(0xFF664D38),
-                              ),
+                            Row(
+                              children: [
+                                const Icon(Icons.location_on, color: AppColors.urgentDanger, size: 16),
+                                const SizedBox(width: 4),
+                                Expanded(
+                                  child: Text(
+                                    report.location,
+                                    style: const TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 14,
+                                      color: AppColors.primaryTextLight,
+                                    ),
+                                  ),
+                                ),
+                              ],
                             ),
+                            if (report.latitude != null && report.longitude != null) ...[
+                              const SizedBox(height: 4),
+                              Row(
+                                children: [
+                                  const Icon(Icons.gps_fixed, size: 12, color: AppColors.primaryTextLight),
+                                  const SizedBox(width: 4),
+                                  Text(
+                                    'GPS: ${report.latitude!.toStringAsFixed(4)}, ${report.longitude!.toStringAsFixed(4)}',
+                                    style: const TextStyle(
+                                      fontSize: 11,
+                                      color: AppColors.primaryTextLight,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ],
+                            if (report.notes != null && report.notes!.isNotEmpty) ...[
+                              const SizedBox(height: 6),
+                              Text(
+                                '"${report.notes}"',
+                                style: const TextStyle(
+                                  fontSize: 12,
+                                  fontStyle: FontStyle.italic,
+                                  color: AppColors.secondaryTextLight,
+                                ),
+                              ),
+                            ],
                           ],
-                        ],
+                        ),
                       ),
-                    ),
-                  ],
-                ),
+                    ],
+                  ),
 
-                const SizedBox(height: 12),
+                  const SizedBox(height: 12),
 
-                // 3-Step Progress Stepper
-                _buildStatusProgressBar(report.status),
+                  // 3-Step Progress Stepper
+                  _buildStatusProgressBar(report.status),
 
-                const SizedBox(height: 8),
+                  const SizedBox(height: 10),
 
-                // Bottom Action buttons
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.end,
-                  children: [
-                    OutlinedButton.icon(
-                      style: OutlinedButton.styleFrom(
-                        visualDensity: VisualDensity.compact,
-                        side: const BorderSide(color: Color(0xFF331D0A)),
+                  // Bottom Action Buttons
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.end,
+                    children: [
+                      OutlinedButton.icon(
+                        style: OutlinedButton.styleFrom(
+                          visualDensity: VisualDensity.compact,
+                          side: const BorderSide(color: AppColors.primaryTextLight),
+                        ),
+                        icon: const Icon(Icons.info_outline, size: 16, color: AppColors.primaryTextLight),
+                        label: Text(
+                          isResolved ? 'View Details (Locked)' : 'Edit Details',
+                          style: const TextStyle(fontSize: 12, color: AppColors.primaryTextLight),
+                        ),
+                        onPressed: () async {
+                          await Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (context) => EditReportScreen(report: report),
+                            ),
+                          );
+                          _loadData();
+                        },
                       ),
-                      icon: const Icon(Icons.edit, size: 16, color: Color(0xFF331D0A)),
-                      label: const Text('Edit Details', style: TextStyle(fontSize: 12, color: Color(0xFF331D0A))),
-                      onPressed: () async {
-                        await Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (context) => EditReportScreen(report: report),
-                          ),
-                        );
-                        _loadData();
-                      },
-                    ),
-                    const SizedBox(width: 8),
-                    TextButton.icon(
-                      style: TextButton.styleFrom(visualDensity: VisualDensity.compact),
-                      icon: const Icon(Icons.delete_outline, size: 16, color: Color(0xFFB84A39)),
-                      label: const Text('Withdraw', style: TextStyle(fontSize: 12, color: Color(0xFFB84A39))),
-                      onPressed: () => _deleteReport(report.id),
-                    ),
-                  ],
-                ),
-              ],
+                      const SizedBox(width: 8),
+                      TextButton.icon(
+                        style: TextButton.styleFrom(visualDensity: VisualDensity.compact),
+                        icon: const Icon(Icons.delete_outline, size: 16, color: AppColors.urgentDanger),
+                        label: const Text('Withdraw', style: TextStyle(fontSize: 12, color: AppColors.urgentDanger)),
+                        onPressed: () => _withdrawReport(report.id),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -615,9 +641,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
     return Container(
       padding: const EdgeInsets.all(10),
       decoration: BoxDecoration(
-        color: const Color(0xFFF4E2CD),
+        color: AppColors.citizenBackground,
         borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: const Color(0xFFEAD7C0)),
+        border: Border.all(color: AppColors.borderLight),
       ),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -626,14 +652,14 @@ class _DashboardScreenState extends State<DashboardScreen> {
           Expanded(
             child: Container(
               height: 3,
-              color: currentStep >= 2 ? const Color(0xFFD97706) : const Color(0xFFC7B39B),
+              color: currentStep >= 2 ? AppColors.statusInProgress : AppColors.borderLight,
             ),
           ),
           _buildStepIndicator(step: 2, label: 'In Progress', activeStep: currentStep),
           Expanded(
             child: Container(
               height: 3,
-              color: currentStep >= 3 ? const Color(0xFF3A5A40) : const Color(0xFFC7B39B),
+              color: currentStep >= 3 ? AppColors.statusResolved : AppColors.borderLight,
             ),
           ),
           _buildStepIndicator(step: 3, label: 'Resolved ✅', activeStep: currentStep),
@@ -647,8 +673,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
     final bool isCurrent = activeStep == step;
 
     Color stepColor = isCompleted
-        ? (step == 3 ? const Color(0xFF3A5A40) : const Color(0xFFD97706))
-        : const Color(0xFF664D38);
+        ? (step == 3 ? AppColors.statusResolved : AppColors.statusInProgress)
+        : AppColors.secondaryTextLight;
 
     return Column(
       children: [
@@ -662,7 +688,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
           ),
           child: Center(
             child: isCompleted
-                ? const Icon(Icons.check, size: 14, color: Color(0xFFF4E2CD))
+                ? const Icon(Icons.check, size: 14, color: AppColors.primaryTextDark)
                 : Text('$step', style: TextStyle(fontSize: 11, color: stepColor, fontWeight: FontWeight.bold)),
           ),
         ),
@@ -672,7 +698,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
           style: TextStyle(
             fontSize: 10,
             fontWeight: isCurrent ? FontWeight.bold : FontWeight.normal,
-            color: isCurrent ? stepColor : const Color(0xFF664D38),
+            color: isCurrent ? stepColor : AppColors.secondaryTextLight,
           ),
         ),
       ],
@@ -684,19 +710,55 @@ class _DashboardScreenState extends State<DashboardScreen> {
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: const [
-          Icon(Icons.eco_outlined, size: 64, color: Color(0xFF331D0A)),
+          Icon(Icons.eco_outlined, size: 64, color: AppColors.primaryTextLight),
           SizedBox(height: 12),
           Text(
             'No waste complaints found',
-            style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Color(0xFF331D0A)),
+            style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: AppColors.primaryTextLight),
           ),
           SizedBox(height: 6),
           Text(
             'Spotted garbage or dumping? Tap "REPORT WASTE SPOT" below.',
-            style: TextStyle(fontSize: 12, color: Color(0xFF664D38)),
+            style: TextStyle(fontSize: 12, color: AppColors.secondaryTextLight),
           ),
         ],
       ),
+    );
+  }
+}
+
+/// Helper wrapper to handle clean navigation restart
+class TrashTrackWrapper extends StatelessWidget {
+  const TrashTrackWrapper({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return FutureBuilder<Map<String, String?>?>(
+      future: LocalStorageService.getCurrentUser(),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Scaffold(
+            backgroundColor: AppColors.citizenBackground,
+            body: Center(child: CircularProgressIndicator(color: AppColors.primaryTextLight)),
+          );
+        }
+
+        final userData = snapshot.data;
+        if (userData == null || userData['email'] == null) {
+          return LoginScreen(onLoginSuccess: () {
+            Navigator.of(context).pushReplacement(
+              MaterialPageRoute(builder: (_) => const TrashTrackWrapper()),
+            );
+          });
+        }
+
+        final role = userData['role'];
+        if (role == 'official') {
+          return const OfficialPortalScreen();
+        }
+
+        return const DashboardScreen();
+      },
     );
   }
 }

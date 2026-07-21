@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'services/local_storage.dart';
+import 'theme/app_theme.dart';
 import 'screens/login_screen.dart';
 import 'screens/dashboard_screen.dart';
 import 'screens/official_portal_screen.dart';
@@ -17,51 +18,34 @@ class TrashTrackApp extends StatefulWidget {
 }
 
 class _TrashTrackAppState extends State<TrashTrackApp> {
-  void _refresh() => setState(() {});
+  void _refreshState() {
+    setState(() {});
+  }
 
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'TrashTrack',
+      title: 'TrashTrack (binit)',
       debugShowCheckedModeBanner: false,
-      theme: ThemeData(
-        useMaterial3: true,
-        primaryColor: const Color(0xFF331D0A), // Deep Espresso
-        scaffoldBackgroundColor: const Color(0xFFF4E2CD), // Linen/Cream
-        appBarTheme: const AppBarTheme(
-          backgroundColor: Color(0xFF331D0A),
-          foregroundColor: Color(0xFFF4E2CD),
-          elevation: 0,
-        ),
-        colorScheme: ColorScheme.fromSeed(
-          seedColor: const Color(0xFF331D0A),
-          primary: const Color(0xFF331D0A), // Primary Dark
-          secondary: const Color(0xFF3A5A40), // Eco Accent Olive Forest
-          error: const Color(0xFFB84A39), // Urgent Alert Terracotta Red
-          surface: const Color(0xFFFAF4EC), // Surface Cards Soft Warm White
-        ),
-        textTheme: const TextTheme(
-          displayLarge: TextStyle(color: Color(0xFF331D0A), fontWeight: FontWeight.bold),
-          titleLarge: TextStyle(color: Color(0xFF331D0A), fontWeight: FontWeight.bold),
-          bodyLarge: TextStyle(color: Color(0xFF331D0A)),
-          bodyMedium: TextStyle(color: Color(0xFF331D0A)),
-        ),
-      ),
+      theme: AppTheme.citizenTheme,
       home: FutureBuilder<Map<String, String?>?>(
-        future: LocalStorageService.getActiveUser(),
+        future: LocalStorageService.getCurrentUser(),
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) {
             return const Scaffold(
-              backgroundColor: Color(0xFFF4E2CD),
-              body: Center(child: CircularProgressIndicator(color: Color(0xFF331D0A))),
+              backgroundColor: AppColors.citizenBackground,
+              body: Center(
+                child: CircularProgressIndicator(color: AppColors.primaryTextLight),
+              ),
             );
           }
 
-          if (!snapshot.hasData || snapshot.data == null) {
-            return LoginScreen(onLoginSuccess: _refresh);
+          final userData = snapshot.data;
+          if (userData == null || userData['email'] == null) {
+            return LoginScreen(onLoginSuccess: _refreshState);
           }
 
-          final role = snapshot.data!['role'];
+          final role = userData['role'];
           if (role == 'official') {
             return const OfficialPortalScreen();
           }

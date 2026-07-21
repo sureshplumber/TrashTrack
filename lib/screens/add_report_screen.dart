@@ -6,6 +6,7 @@ import 'package:geolocator/geolocator.dart';
 import 'package:image_picker/image_picker.dart';
 import '../models/waste_report.dart';
 import '../services/local_storage.dart';
+import '../theme/app_theme.dart';
 
 class AddReportScreen extends StatefulWidget {
   const AddReportScreen({super.key});
@@ -35,19 +36,39 @@ class _AddReportScreenState extends State<AddReportScreen> {
     'E-Waste',
     'Organic',
     'C&D Debris',
-    'Overflowing Bin'
+    'Overflowing Bin',
   ];
 
   @override
+  void initState() {
+    super.initState();
+    _locationController.addListener(_onFieldChanged);
+  }
+
+  @override
   void dispose() {
+    _locationController.removeListener(_onFieldChanged);
     _locationController.dispose();
     _notesController.dispose();
     super.dispose();
   }
 
+  void _onFieldChanged() {
+    setState(() {});
+  }
+
   String _generateCaseId() {
     final rand = Random().nextInt(0xFFFFFF).toRadixString(16).padLeft(6, '0').toUpperCase();
     return 'CMP-$rand';
+  }
+
+  /// Whether the submit button should be enabled.
+  /// Rule: Required fields are location, category, AND at least one of photo or GPS coordinates.
+  bool get _isFormValid {
+    final hasLocation = _locationController.text.trim().isNotEmpty;
+    final hasPhoto = _imageBase64 != null && _imageBase64!.isNotEmpty;
+    final hasGPS = _latitude != null && _longitude != null;
+    return hasLocation && (hasPhoto || hasGPS);
   }
 
   Future<void> _fetchGPSLocation() async {
@@ -58,8 +79,8 @@ class _AddReportScreenState extends State<AddReportScreen> {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
-              content: Text('Location services are disabled. Please turn on GPS.'),
-              backgroundColor: Color(0xFFB84A39),
+              content: Text('Location services are disabled. Please enable GPS in system settings.'),
+              backgroundColor: AppColors.urgentDanger,
             ),
           );
         }
@@ -71,6 +92,14 @@ class _AddReportScreenState extends State<AddReportScreen> {
       if (permission == LocationPermission.denied) {
         permission = await Geolocator.requestPermission();
         if (permission == LocationPermission.denied) {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('Location permission denied. You can manually enter the address below.'),
+                backgroundColor: AppColors.urgentDanger,
+              ),
+            );
+          }
           setState(() => _isLocating = false);
           return;
         }
@@ -80,8 +109,8 @@ class _AddReportScreenState extends State<AddReportScreen> {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
-              content: Text('Location permissions are permanently denied.'),
-              backgroundColor: Color(0xFFB84A39),
+              content: Text('Location permission permanently denied. Please type landmark address manually.'),
+              backgroundColor: AppColors.urgentDanger,
             ),
           );
         }
@@ -89,12 +118,17 @@ class _AddReportScreenState extends State<AddReportScreen> {
         return;
       }
 
-      Position position = await Geolocator.getCurrentPosition();
+      Position position = await Geolocator.getCurrentPosition(
+        locationSettings: const LocationSettings(
+          accuracy: LocationAccuracy.high,
+          timeLimit: Duration(seconds: 10),
+        ),
+      );
 
       setState(() {
         _latitude = position.latitude;
         _longitude = position.longitude;
-        if (_locationController.text.isEmpty) {
+        if (_locationController.text.trim().isEmpty) {
           _locationController.text = "GPS: ${_latitude!.toStringAsFixed(4)}, ${_longitude!.toStringAsFixed(4)}";
         }
         _isLocating = false;
@@ -104,7 +138,7 @@ class _AddReportScreenState extends State<AddReportScreen> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('GPS Captured: Lat ${_latitude!.toStringAsFixed(4)}, Lng ${_longitude!.toStringAsFixed(4)}'),
-            backgroundColor: const Color(0xFF3A5A40), // Eco Accent Olive Forest
+            backgroundColor: AppColors.statusResolved,
           ),
         );
       }
@@ -112,7 +146,10 @@ class _AddReportScreenState extends State<AddReportScreen> {
       setState(() => _isLocating = false);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error acquiring GPS: $e')),
+          SnackBar(
+            content: Text('Could not obtain location: ${e.toString()}'),
+            backgroundColor: AppColors.urgentDanger,
+          ),
         );
       }
     }
@@ -136,7 +173,10 @@ class _AddReportScreenState extends State<AddReportScreen> {
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Could not attach image: $e')),
+          SnackBar(
+            content: Text('Camera/Gallery access error: ${e.toString()}'),
+            backgroundColor: AppColors.urgentDanger,
+          ),
         );
       }
     }
@@ -145,7 +185,7 @@ class _AddReportScreenState extends State<AddReportScreen> {
   void _showImageSourceDialog() {
     showModalBottomSheet(
       context: context,
-      backgroundColor: const Color(0xFFFAF4EC), // Soft Warm White
+      backgroundColor: AppColors.citizenCardSurface,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
       ),
@@ -156,21 +196,21 @@ class _AddReportScreenState extends State<AddReportScreen> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             const Text(
-              'Attach Photo of Waste Spot',
-              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Color(0xFF331D0A)),
+              'Attach Waste Photo Evidence',
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: AppColors.primaryTextLight),
             ),
             const SizedBox(height: 16),
             ListTile(
-              leading: const Icon(Icons.camera_alt, color: Color(0xFF331D0A)),
-              title: const Text('Take Photo with Camera', style: TextStyle(color: Color(0xFF331D0A))),
+              leading: const Icon(Icons.camera_alt, color: AppColors.primaryTextLight),
+              title: const Text('Take Photo with Camera', style: TextStyle(color: AppColors.primaryTextLight)),
               onTap: () {
                 Navigator.pop(ctx);
                 _pickImage(ImageSource.camera);
               },
             ),
             ListTile(
-              leading: const Icon(Icons.photo_library, color: Color(0xFF331D0A)),
-              title: const Text('Choose from Gallery', style: TextStyle(color: Color(0xFF331D0A))),
+              leading: const Icon(Icons.photo_library, color: AppColors.primaryTextLight),
+              title: const Text('Choose from Gallery', style: TextStyle(color: AppColors.primaryTextLight)),
               onTap: () {
                 Navigator.pop(ctx);
                 _pickImage(ImageSource.gallery);
@@ -183,40 +223,41 @@ class _AddReportScreenState extends State<AddReportScreen> {
   }
 
   Future<void> _submitForm() async {
-    if (_formKey.currentState!.validate()) {
-      final newReport = WasteReport(
-        id: _generateCaseId(),
-        location: _locationController.text.trim(),
-        category: _category,
-        isUrgent: _isUrgent,
-        status: 'Pending',
-        latitude: _latitude,
-        longitude: _longitude,
-        imageBase64: _imageBase64,
-        notes: _notesController.text.trim(),
-        createdAt: DateTime.now().toIso8601String(),
-      );
+    if (!_isFormValid) return;
+    if (!_formKey.currentState!.validate()) return;
 
-      await LocalStorageService.saveReport(newReport);
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Complaint ${newReport.id} submitted successfully!'),
-            backgroundColor: const Color(0xFF3A5A40),
-          ),
-        );
-        Navigator.pop(context);
-      }
+    final newReport = WasteReport(
+      id: _generateCaseId(),
+      location: _locationController.text.trim(),
+      category: _category,
+      isUrgent: _isUrgent,
+      status: 'Pending',
+      latitude: _latitude,
+      longitude: _longitude,
+      imageBase64: _imageBase64,
+      notes: _notesController.text.trim(),
+      createdAt: DateTime.now().toIso8601String(),
+    );
+
+    await LocalStorageService.saveReport(newReport);
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Complaint #${newReport.id} submitted successfully!'),
+          backgroundColor: AppColors.statusResolved,
+        ),
+      );
+      Navigator.pop(context);
     }
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFF4E2CD), // Linen/Cream Primary Background
+      backgroundColor: AppColors.citizenBackground,
       appBar: AppBar(
-        title: const Text('File Waste Complaint', style: TextStyle(color: Color(0xFFF4E2CD))),
-        backgroundColor: const Color(0xFF331D0A), // Deep Espresso Header
+        title: const Text('File Waste Complaint', style: TextStyle(color: AppColors.primaryTextDark)),
+        backgroundColor: AppColors.primaryTextLight,
         elevation: 0,
       ),
       body: SingleChildScrollView(
@@ -226,10 +267,10 @@ class _AddReportScreenState extends State<AddReportScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // Photo Attachment Section (Square Preview Thumbnail)
+              // Photo Evidence Section
               const Text(
                 '1. Photo Evidence',
-                style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: Color(0xFF331D0A)),
+                style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: AppColors.primaryTextLight),
               ),
               const SizedBox(height: 8),
               Center(
@@ -239,10 +280,10 @@ class _AddReportScreenState extends State<AddReportScreen> {
                     width: 160,
                     height: 160,
                     decoration: BoxDecoration(
-                      color: const Color(0xFFFAF4EC), // Surface Cards Soft Warm White
+                      color: AppColors.citizenCardSurface,
                       borderRadius: BorderRadius.circular(12),
                       border: Border.all(
-                        color: _imageBytes != null ? const Color(0xFF331D0A) : const Color(0xFFEAD7C0),
+                        color: _imageBytes != null ? AppColors.primaryTextLight : AppColors.borderLight,
                         width: _imageBytes != null ? 2 : 1,
                       ),
                       boxShadow: const [
@@ -260,9 +301,12 @@ class _AddReportScreenState extends State<AddReportScreen> {
                                 top: 4,
                                 right: 4,
                                 child: Container(
-                                  decoration: const BoxDecoration(color: Color(0xFF331D0A), shape: BoxShape.circle),
+                                  decoration: const BoxDecoration(
+                                    color: AppColors.primaryTextLight,
+                                    shape: BoxShape.circle,
+                                  ),
                                   child: IconButton(
-                                    icon: const Icon(Icons.edit, color: Color(0xFFF4E2CD), size: 18),
+                                    icon: const Icon(Icons.edit, color: AppColors.primaryTextDark, size: 18),
                                     onPressed: _showImageSourceDialog,
                                   ),
                                 ),
@@ -272,16 +316,16 @@ class _AddReportScreenState extends State<AddReportScreen> {
                         : Column(
                             mainAxisAlignment: MainAxisAlignment.center,
                             children: const [
-                              Icon(Icons.add_a_photo, size: 40, color: Color(0xFF331D0A)),
+                              Icon(Icons.add_a_photo, size: 40, color: AppColors.primaryTextLight),
                               SizedBox(height: 8),
                               Text(
                                 'Tap to add Photo',
-                                style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Color(0xFF331D0A)),
+                                style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.primaryTextLight),
                               ),
                               SizedBox(height: 2),
                               Text(
                                 'Camera / Gallery',
-                                style: TextStyle(fontSize: 11, color: Color(0xFF664D38)),
+                                style: TextStyle(fontSize: 11, color: AppColors.secondaryTextLight),
                               ),
                             ],
                           ),
@@ -294,23 +338,25 @@ class _AddReportScreenState extends State<AddReportScreen> {
               // Location Field with Inline GPS Button
               const Text(
                 '2. Precise Location',
-                style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: Color(0xFF331D0A)),
+                style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: AppColors.primaryTextLight),
               ),
               const SizedBox(height: 8),
               TextFormField(
                 controller: _locationController,
+                style: const TextStyle(color: AppColors.primaryTextLight),
                 decoration: InputDecoration(
                   labelText: 'Landmark / Street Address',
-                  labelStyle: const TextStyle(color: Color(0xFF331D0A)),
+                  labelStyle: const TextStyle(color: AppColors.primaryTextLight),
                   hintText: 'e.g. 12th Main Road, Indiranagar',
+                  hintStyle: const TextStyle(color: AppColors.secondaryTextLight, fontSize: 13),
                   filled: true,
-                  fillColor: const Color(0xFFFAF4EC), // Soft Warm White
+                  fillColor: AppColors.citizenCardSurface,
                   border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
-                  prefixIcon: const Icon(Icons.location_on, color: Color(0xFFB84A39)), // Urgent Terracotta Red
+                  prefixIcon: const Icon(Icons.location_on, color: AppColors.urgentDanger),
                   suffixIcon: Container(
                     margin: const EdgeInsets.all(4),
                     decoration: BoxDecoration(
-                      color: const Color(0xFFF4E2CD),
+                      color: AppColors.citizenBackground,
                       borderRadius: BorderRadius.circular(8),
                     ),
                     child: IconButton(
@@ -318,9 +364,9 @@ class _AddReportScreenState extends State<AddReportScreen> {
                           ? const SizedBox(
                               width: 18,
                               height: 18,
-                              child: CircularProgressIndicator(strokeWidth: 2, color: Color(0xFF331D0A)),
+                              child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.primaryTextLight),
                             )
-                          : const Icon(Icons.my_location, color: Color(0xFF331D0A)),
+                          : const Icon(Icons.my_location, color: AppColors.primaryTextLight),
                       onPressed: _fetchGPSLocation,
                       tooltip: 'Detect GPS Location',
                     ),
@@ -334,11 +380,11 @@ class _AddReportScreenState extends State<AddReportScreen> {
                   padding: const EdgeInsets.only(top: 6.0, left: 4.0),
                   child: Row(
                     children: [
-                      const Icon(Icons.gps_fixed, size: 12, color: Color(0xFF331D0A)),
+                      const Icon(Icons.gps_fixed, size: 12, color: AppColors.primaryTextLight),
                       const SizedBox(width: 4),
                       Text(
                         'Coordinates: ${_latitude!.toStringAsFixed(4)}, ${_longitude!.toStringAsFixed(4)}',
-                        style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFF331D0A)),
+                        style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: AppColors.primaryTextLight),
                       ),
                     ],
                   ),
@@ -349,35 +395,42 @@ class _AddReportScreenState extends State<AddReportScreen> {
               // Category, Notes, Urgency Switch
               const Text(
                 '3. Category & Details',
-                style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: Color(0xFF331D0A)),
+                style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: AppColors.primaryTextLight),
               ),
               const SizedBox(height: 8),
               DropdownButtonFormField<String>(
                 initialValue: _category,
+                style: const TextStyle(color: AppColors.primaryTextLight),
                 decoration: InputDecoration(
                   labelText: 'Waste Category',
-                  labelStyle: const TextStyle(color: Color(0xFF331D0A)),
+                  labelStyle: const TextStyle(color: AppColors.primaryTextLight),
                   filled: true,
-                  fillColor: const Color(0xFFFAF4EC), // Soft Warm White
+                  fillColor: AppColors.citizenCardSurface,
                   border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
-                  prefixIcon: const Icon(Icons.category, color: Color(0xFF331D0A)),
+                  prefixIcon: const Icon(Icons.category, color: AppColors.primaryTextLight),
                 ),
                 items: _categories
                     .map((cat) => DropdownMenuItem(value: cat, child: Text(cat)))
                     .toList(),
-                onChanged: (val) => setState(() => _category = val!),
+                onChanged: (val) {
+                  if (val != null) {
+                    setState(() => _category = val);
+                  }
+                },
               ),
 
               const SizedBox(height: 14),
               TextFormField(
                 controller: _notesController,
                 maxLines: 3,
+                style: const TextStyle(color: AppColors.primaryTextLight),
                 decoration: InputDecoration(
                   labelText: 'Notes / Additional Details (Optional)',
-                  labelStyle: const TextStyle(color: Color(0xFF331D0A)),
+                  labelStyle: const TextStyle(color: AppColors.primaryTextLight),
                   hintText: 'Describe issue details, volume, or hazards...',
+                  hintStyle: const TextStyle(color: AppColors.secondaryTextLight, fontSize: 13),
                   filled: true,
-                  fillColor: const Color(0xFFFAF4EC), // Soft Warm White
+                  fillColor: AppColors.citizenCardSurface,
                   border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
                 ),
               ),
@@ -386,50 +439,76 @@ class _AddReportScreenState extends State<AddReportScreen> {
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                 decoration: BoxDecoration(
-                  color: const Color(0xFFFAF4EC), // Surface Card
+                  color: AppColors.citizenCardSurface,
                   borderRadius: BorderRadius.circular(10),
-                  border: Border.all(color: const Color(0xFFEAD7C0)),
+                  border: Border.all(color: AppColors.borderLight),
                 ),
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
                     Row(
                       children: const [
-                        Icon(Icons.warning_amber_rounded, color: Color(0xFFB84A39)),
+                        Icon(Icons.warning_amber_rounded, color: AppColors.urgentDanger),
                         SizedBox(width: 8),
                         Text(
                           'Mark as High Urgency Priority',
-                          style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: Color(0xFF331D0A)),
+                          style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: AppColors.primaryTextLight),
                         ),
                       ],
                     ),
                     Switch(
                       value: _isUrgent,
-                      activeThumbColor: const Color(0xFFB84A39), // Urgent Terracotta Red #B84A39
+                      activeThumbColor: AppColors.urgentDanger,
                       onChanged: (val) => setState(() => _isUrgent = val),
                     ),
                   ],
                 ),
               ),
 
-              const SizedBox(height: 24),
+              const SizedBox(height: 16),
 
-              // Submit Button
+              // Helper message if required fields missing
+              if (!_isFormValid)
+                Container(
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: AppColors.urgentDanger.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: AppColors.urgentDanger.withValues(alpha: 0.3)),
+                  ),
+                  child: Row(
+                    children: const [
+                      Icon(Icons.info_outline, color: AppColors.urgentDanger, size: 18),
+                      SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          'Location + at least one evidence source (Photo or GPS) required to submit.',
+                          style: TextStyle(fontSize: 11, color: AppColors.urgentDanger, fontWeight: FontWeight.w600),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+
+              const SizedBox(height: 20),
+
+              // Submit Button (disabled until required fields are valid)
               SizedBox(
                 width: double.infinity,
-                height: 50,
+                height: 52,
                 child: ElevatedButton.icon(
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF331D0A), // Deep Espresso #331D0A
+                    backgroundColor: AppColors.primaryTextLight,
+                    disabledBackgroundColor: AppColors.secondaryTextLight.withValues(alpha: 0.3),
                     elevation: 2,
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                   ),
-                  icon: const Icon(Icons.send_rounded, color: Color(0xFFF4E2CD)),
+                  icon: const Icon(Icons.send_rounded, color: AppColors.primaryTextDark),
                   label: const Text(
                     'SUBMIT COMPLAINT',
-                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Color(0xFFF4E2CD), letterSpacing: 0.5),
+                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: AppColors.primaryTextDark, letterSpacing: 0.5),
                   ),
-                  onPressed: _submitForm,
+                  onPressed: _isFormValid ? _submitForm : null,
                 ),
               ),
             ],

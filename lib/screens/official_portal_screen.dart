@@ -3,6 +3,8 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import '../models/waste_report.dart';
 import '../services/local_storage.dart';
+import '../theme/app_theme.dart';
+import 'edit_report_screen.dart';
 import 'login_screen.dart';
 
 class OfficialPortalScreen extends StatefulWidget {
@@ -17,6 +19,7 @@ class _OfficialPortalScreenState extends State<OfficialPortalScreen> {
   bool _isLoading = true;
   String _searchQuery = '';
   String _selectedStatusFilter = 'All';
+  bool _urgentFirstSort = true;
 
   @override
   void initState() {
@@ -24,25 +27,33 @@ class _OfficialPortalScreenState extends State<OfficialPortalScreen> {
     _loadData();
   }
 
-  Future<void> _loadData() async {
-    setState(() => _isLoading = true);
-    final data = await LocalStorageService.getReports();
-    // Sort reverse chronological
-    data.sort((a, b) => b.createdAt.compareTo(a.createdAt));
-    setState(() {
-      _allReports = data;
-      _isLoading = false;
-    });
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _loadData();
   }
 
-  void _logout() async {
+  Future<void> _loadData() async {
+    final data = await LocalStorageService.getAllReports();
+    if (mounted) {
+      setState(() {
+        _allReports = data;
+        _isLoading = false;
+      });
+    }
+  }
+
+  Future<void> _logout() async {
     await LocalStorageService.logout();
     if (mounted) {
       Navigator.of(context).pushAndRemoveUntil(
         MaterialPageRoute(
           builder: (context) => LoginScreen(
             onLoginSuccess: () {
-              Navigator.pushReplacementNamed(context, '/');
+              Navigator.of(context).pushAndRemoveUntil(
+                MaterialPageRoute(builder: (_) => const TrashTrackWrapper()),
+                (route) => false,
+              );
             },
           ),
         ),
@@ -58,10 +69,10 @@ class _OfficialPortalScreenState extends State<OfficialPortalScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-            'Case #${report.id} has been MARKED AS RESOLVED ✅',
-            style: const TextStyle(color: Color(0xFFF4E2CD), fontWeight: FontWeight.bold),
+            'Case #${report.id} MARKED AS RESOLVED ✅',
+            style: const TextStyle(color: AppColors.primaryTextDark, fontWeight: FontWeight.bold),
           ),
-          backgroundColor: const Color(0xFF3A5A40), // Eco Accent Olive Forest #3A5A40
+          backgroundColor: AppColors.statusResolved,
           duration: const Duration(seconds: 2),
         ),
       );
@@ -69,17 +80,17 @@ class _OfficialPortalScreenState extends State<OfficialPortalScreen> {
     _loadData();
   }
 
-  Future<void> _updateStatus(WasteReport report, String newStatus) async {
-    report.status = newStatus;
+  Future<void> _markInProgress(WasteReport report) async {
+    report.status = 'In Progress';
     await LocalStorageService.updateReport(report);
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-            'Case #${report.id} status updated to "$newStatus"',
-            style: const TextStyle(color: Color(0xFFF4E2CD)),
+            'Case #${report.id} updated to IN PROGRESS 🛠️',
+            style: const TextStyle(color: AppColors.primaryTextDark, fontWeight: FontWeight.bold),
           ),
-          backgroundColor: const Color(0xFF331D0A),
+          backgroundColor: AppColors.statusInProgress,
           duration: const Duration(seconds: 2),
         ),
       );
@@ -88,8 +99,8 @@ class _OfficialPortalScreenState extends State<OfficialPortalScreen> {
   }
 
   List<WasteReport> get _filteredReports {
-    return _allReports.where((report) {
-      // Status filter
+    final filtered = _allReports.where((report) {
+      // Status & Urgency filter
       if (_selectedStatusFilter == 'Urgent') {
         if (!report.isUrgent) return false;
       } else if (_selectedStatusFilter != 'All') {
@@ -98,9 +109,9 @@ class _OfficialPortalScreenState extends State<OfficialPortalScreen> {
         }
       }
 
-      // Search query filter
-      if (_searchQuery.isNotEmpty) {
-        final query = _searchQuery.toLowerCase();
+      // Search query filter (Case ID, Address, Category)
+      if (_searchQuery.trim().isNotEmpty) {
+        final query = _searchQuery.trim().toLowerCase();
         final matchesLocation = report.location.toLowerCase().contains(query);
         final matchesCategory = report.category.toLowerCase().contains(query);
         final matchesId = report.id.toLowerCase().contains(query);
@@ -110,11 +121,22 @@ class _OfficialPortalScreenState extends State<OfficialPortalScreen> {
 
       return true;
     }).toList();
+
+    // Sort logic: Urgent first (if enabled), then reverse chronological
+    filtered.sort((a, b) {
+      if (_urgentFirstSort) {
+        if (a.isUrgent && !b.isUrgent) return -1;
+        if (!a.isUrgent && b.isUrgent) return 1;
+      }
+      return b.createdAt.compareTo(a.createdAt);
+    });
+
+    return filtered;
   }
 
   @override
   Widget build(BuildContext context) {
-    // Analytics counters
+    // Live KPI analytics counters
     final totalCount = _allReports.length;
     final urgentCount = _allReports.where((r) => r.isUrgent).length;
     final pendingCount = _allReports.where((r) => r.status.toLowerCase() == 'pending').length;
@@ -122,13 +144,13 @@ class _OfficialPortalScreenState extends State<OfficialPortalScreen> {
     final resolvedCount = _allReports.where((r) => r.status.toLowerCase() == 'resolved').length;
 
     return Scaffold(
-      backgroundColor: const Color(0xFFF4E2CD), // Linen/Cream Primary Background
+      backgroundColor: AppColors.officialBackground,
       appBar: AppBar(
         elevation: 0,
-        backgroundColor: const Color(0xFF331D0A), // Deep Espresso
+        backgroundColor: AppColors.officialBackground,
         leading: const Padding(
           padding: EdgeInsets.all(12.0),
-          child: Icon(Icons.admin_panel_settings, color: Color(0xFFF4E2CD), size: 28),
+          child: Icon(Icons.admin_panel_settings, color: AppColors.primaryTextDark, size: 28),
         ),
         title: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -139,37 +161,37 @@ class _OfficialPortalScreenState extends State<OfficialPortalScreen> {
                 fontSize: 18,
                 fontWeight: FontWeight.bold,
                 letterSpacing: 0.5,
-                color: Color(0xFFF4E2CD),
+                color: AppColors.primaryTextDark,
               ),
             ),
             Text(
               'Government Municipal Clearance & Operational Control',
               style: TextStyle(
                 fontSize: 11,
-                color: Color(0xFFFAF4EC),
+                color: AppColors.secondaryTextDark,
               ),
             ),
           ],
         ),
         actions: [
           IconButton(
-            icon: const Icon(Icons.refresh, color: Color(0xFFF4E2CD)),
+            icon: const Icon(Icons.refresh, color: AppColors.primaryTextDark),
             tooltip: 'Refresh Complaints',
             onPressed: _loadData,
           ),
           IconButton(
-            icon: const Icon(Icons.logout, color: Color(0xFFB84A39)),
+            icon: const Icon(Icons.logout, color: AppColors.urgentDanger),
             tooltip: 'Official Logout',
             onPressed: _logout,
           ),
         ],
       ),
       body: _isLoading
-          ? const Center(child: CircularProgressIndicator(color: Color(0xFF331D0A)))
+          ? const Center(child: CircularProgressIndicator(color: AppColors.primaryTextDark))
           : Column(
               children: [
-                // Top Executive KPI Control Panel (#331D0A background with #F4E2CD labels)
-                _buildAnalyticsBanner(
+                // Top Executive KPI Control Panel
+                _buildKpiBanner(
                   total: totalCount,
                   urgent: urgentCount,
                   pending: pendingCount,
@@ -177,41 +199,43 @@ class _OfficialPortalScreenState extends State<OfficialPortalScreen> {
                   resolved: resolvedCount,
                 ),
 
-                // Search and Filter Controls Bar
-                _buildFilterControls(),
+                // Search & Filters Control Bar
+                _buildSearchAndFilterBar(),
 
-                // Header for Complaints List
+                // Subheader with Sort Toggle & Registry Count
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
                   child: Row(
                     children: [
-                      const Icon(Icons.verified_user, size: 20, color: Color(0xFF3A5A40)),
-                      const SizedBox(width: 8),
+                      const Icon(Icons.verified_user_outlined, size: 18, color: AppColors.statusResolved),
+                      const SizedBox(width: 6),
                       Text(
-                        'Citizen Complaints Registry (${_filteredReports.length})',
+                        'Complaints Registry (${_filteredReports.length})',
                         style: const TextStyle(
-                          fontSize: 15,
+                          fontSize: 14,
                           fontWeight: FontWeight.bold,
-                          color: Color(0xFF331D0A),
+                          color: AppColors.primaryTextDark,
                         ),
                       ),
                       const Spacer(),
-                      if (_selectedStatusFilter != 'All' || _searchQuery.isNotEmpty)
-                        TextButton.icon(
-                          onPressed: () {
-                            setState(() {
-                              _selectedStatusFilter = 'All';
-                              _searchQuery = '';
-                            });
-                          },
-                          icon: const Icon(Icons.clear_all, size: 16, color: Color(0xFF331D0A)),
-                          label: const Text('Reset Filters', style: TextStyle(color: Color(0xFF331D0A))),
-                        ),
+                      // Urgent-first sort toggle
+                      FilterChip(
+                        selected: _urgentFirstSort,
+                        showCheckmark: true,
+                        checkmarkColor: AppColors.primaryTextDark,
+                        avatar: const Icon(Icons.sort, size: 14, color: AppColors.primaryTextDark),
+                        label: const Text('Urgent First'),
+                        labelStyle: const TextStyle(fontSize: 11, color: AppColors.primaryTextDark),
+                        selectedColor: AppColors.urgentDanger.withValues(alpha: 0.4),
+                        backgroundColor: AppColors.officialCardSurface,
+                        side: const BorderSide(color: AppColors.borderDark),
+                        onSelected: (val) => setState(() => _urgentFirstSort = val),
+                      ),
                     ],
                   ),
                 ),
 
-                // Complaints List View
+                // Complaints List View (Note: HARD CONSTRAINT - NO FAB, NO CREATE UI ANYWHERE)
                 Expanded(
                   child: _filteredReports.isEmpty
                       ? _buildEmptyState()
@@ -229,7 +253,7 @@ class _OfficialPortalScreenState extends State<OfficialPortalScreen> {
     );
   }
 
-  Widget _buildAnalyticsBanner({
+  Widget _buildKpiBanner({
     required int total,
     required int urgent,
     required int pending,
@@ -238,8 +262,8 @@ class _OfficialPortalScreenState extends State<OfficialPortalScreen> {
   }) {
     return Container(
       width: double.infinity,
-      color: const Color(0xFF331D0A), // Primary Dark Deep Espresso
-      padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+      color: AppColors.officialBackground,
+      padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
       child: SingleChildScrollView(
         scrollDirection: Axis.horizontal,
         child: Row(
@@ -247,45 +271,40 @@ class _OfficialPortalScreenState extends State<OfficialPortalScreen> {
             _buildKpiCard(
               title: 'Total Logged',
               value: total.toString(),
-              icon: Icons.folder_special,
-              color: const Color(0xFFF4E2CD),
-              bgColor: const Color(0xFF4A2B11),
+              icon: Icons.folder_open_outlined,
+              accentColor: AppColors.primaryTextDark,
               filterKey: 'All',
             ),
-            const SizedBox(width: 10),
+            const SizedBox(width: 8),
             _buildKpiCard(
               title: 'Urgent Alerts',
               value: urgent.toString(),
               icon: Icons.warning_amber_rounded,
-              color: const Color(0xFFB84A39), // Urgent Alert Terracotta Red #B84A39
-              bgColor: const Color(0xFF421C14),
+              accentColor: AppColors.urgentDanger,
               filterKey: 'Urgent',
             ),
-            const SizedBox(width: 10),
+            const SizedBox(width: 8),
             _buildKpiCard(
               title: 'Pending',
               value: pending.toString(),
               icon: Icons.hourglass_top_rounded,
-              color: const Color(0xFFD97706), // In-Progress Warm Amber
-              bgColor: const Color(0xFF4A2B11),
+              accentColor: AppColors.statusInProgress,
               filterKey: 'Pending',
             ),
-            const SizedBox(width: 10),
+            const SizedBox(width: 8),
             _buildKpiCard(
               title: 'In Progress',
               value: inProgress.toString(),
               icon: Icons.engineering_rounded,
-              color: const Color(0xFFD97706),
-              bgColor: const Color(0xFF4A2B11),
+              accentColor: AppColors.statusInProgress,
               filterKey: 'In Progress',
             ),
-            const SizedBox(width: 10),
+            const SizedBox(width: 8),
             _buildKpiCard(
               title: 'Resolved ✅',
               value: resolved.toString(),
               icon: Icons.check_circle_outline_rounded,
-              color: const Color(0xFF86EFAC),
-              bgColor: const Color(0xFF3A5A40), // Eco Accent Olive Forest #3A5A40
+              accentColor: AppColors.statusResolved,
               filterKey: 'Resolved',
             ),
           ],
@@ -298,8 +317,7 @@ class _OfficialPortalScreenState extends State<OfficialPortalScreen> {
     required String title,
     required String value,
     required IconData icon,
-    required Color color,
-    required Color bgColor,
+    required Color accentColor,
     required String filterKey,
   }) {
     final isSelected = _selectedStatusFilter == filterKey;
@@ -314,25 +332,22 @@ class _OfficialPortalScreenState extends State<OfficialPortalScreen> {
         duration: const Duration(milliseconds: 200),
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
         decoration: BoxDecoration(
-          color: bgColor,
+          color: AppColors.officialCardSurface,
           borderRadius: BorderRadius.circular(10),
           border: Border.all(
-            color: isSelected ? const Color(0xFFF4E2CD) : color.withValues(alpha: 0.4),
+            color: isSelected ? accentColor : AppColors.borderDark,
             width: isSelected ? 2 : 1,
           ),
-          boxShadow: isSelected
-              ? [BoxShadow(color: color.withValues(alpha: 0.4), blurRadius: 8, spreadRadius: 1)]
-              : [],
         ),
         child: Row(
           children: [
             Container(
               padding: const EdgeInsets.all(6),
               decoration: BoxDecoration(
-                color: color.withValues(alpha: 0.15),
+                color: accentColor.withValues(alpha: 0.15),
                 shape: BoxShape.circle,
               ),
-              child: Icon(icon, color: color, size: 20),
+              child: Icon(icon, color: accentColor, size: 20),
             ),
             const SizedBox(width: 10),
             Column(
@@ -343,14 +358,14 @@ class _OfficialPortalScreenState extends State<OfficialPortalScreen> {
                   style: const TextStyle(
                     fontSize: 18,
                     fontWeight: FontWeight.bold,
-                    color: Color(0xFFF4E2CD), // Linen/Cream
+                    color: AppColors.primaryTextDark,
                   ),
                 ),
                 Text(
                   title,
                   style: const TextStyle(
                     fontSize: 11,
-                    color: Color(0xFFFAF4EC), // Soft Warm White
+                    color: AppColors.secondaryTextDark,
                   ),
                 ),
               ],
@@ -361,54 +376,55 @@ class _OfficialPortalScreenState extends State<OfficialPortalScreen> {
     );
   }
 
-  Widget _buildFilterControls() {
+  Widget _buildSearchAndFilterBar() {
     return Container(
-      color: const Color(0xFFFAF4EC),
+      color: AppColors.officialCardSurface,
       padding: const EdgeInsets.all(12),
       child: Column(
         children: [
-          // Search Bar
+          // Search Input
           TextField(
             onChanged: (val) => setState(() => _searchQuery = val),
-            style: const TextStyle(color: Color(0xFF331D0A)),
+            style: const TextStyle(color: AppColors.primaryTextDark),
             decoration: InputDecoration(
-              hintText: 'Search complaints by Case ID, Location, Category...',
-              hintStyle: const TextStyle(fontSize: 13, color: Color(0xFF664D38)),
-              prefixIcon: const Icon(Icons.search, color: Color(0xFF331D0A)),
+              hintText: 'Search by Case ID, Location address, or Category...',
+              hintStyle: const TextStyle(fontSize: 13, color: AppColors.secondaryTextDark),
+              prefixIcon: const Icon(Icons.search, color: AppColors.primaryTextDark),
               suffixIcon: _searchQuery.isNotEmpty
                   ? IconButton(
-                      icon: const Icon(Icons.clear, size: 18, color: Color(0xFF331D0A)),
+                      icon: const Icon(Icons.clear, size: 18, color: AppColors.primaryTextDark),
                       onPressed: () => setState(() => _searchQuery = ''),
                     )
                   : null,
               contentPadding: const EdgeInsets.symmetric(vertical: 0, horizontal: 12),
               filled: true,
-              fillColor: Colors.white,
+              fillColor: AppColors.officialBackground,
               border: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(8),
-                borderSide: const BorderSide(color: Color(0xFF331D0A)),
+                borderSide: const BorderSide(color: AppColors.borderDark),
               ),
               enabledBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(8),
-                borderSide: const BorderSide(color: Color(0xFFEAD7C0)),
+                borderSide: const BorderSide(color: AppColors.borderDark),
               ),
             ),
           ),
           const SizedBox(height: 10),
-          // Status Chips Bar
+
+          // Status Filter Chips
           SingleChildScrollView(
             scrollDirection: Axis.horizontal,
             child: Row(
               children: [
                 _buildFilterChip('All'),
                 const SizedBox(width: 8),
-                _buildFilterChip('Urgent', icon: Icons.error_outline, color: const Color(0xFFB84A39)),
+                _buildFilterChip('Urgent', icon: Icons.warning_amber_rounded, color: AppColors.urgentDanger),
                 const SizedBox(width: 8),
-                _buildFilterChip('Pending', icon: Icons.timer, color: const Color(0xFFD97706)),
+                _buildFilterChip('Pending', icon: Icons.timer_outlined, color: AppColors.statusInProgress),
                 const SizedBox(width: 8),
-                _buildFilterChip('In Progress', icon: Icons.sync, color: const Color(0xFFD97706)),
+                _buildFilterChip('In Progress', icon: Icons.construction, color: AppColors.statusInProgress),
                 const SizedBox(width: 8),
-                _buildFilterChip('Resolved', icon: Icons.check_circle, color: const Color(0xFF3A5A40)),
+                _buildFilterChip('Resolved', icon: Icons.check_circle_outline, color: AppColors.statusResolved),
               ],
             ),
           ),
@@ -419,24 +435,24 @@ class _OfficialPortalScreenState extends State<OfficialPortalScreen> {
 
   Widget _buildFilterChip(String label, {IconData? icon, Color? color}) {
     final isSelected = _selectedStatusFilter == label;
-    final activeColor = color ?? const Color(0xFF331D0A);
+    final activeColor = color ?? AppColors.primaryTextDark;
 
     return FilterChip(
       selected: isSelected,
       showCheckmark: false,
       avatar: icon != null
-          ? Icon(icon, size: 16, color: isSelected ? const Color(0xFFF4E2CD) : activeColor)
+          ? Icon(icon, size: 16, color: isSelected ? AppColors.primaryTextDark : activeColor)
           : null,
       label: Text(label),
       labelStyle: TextStyle(
         fontSize: 12,
         fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
-        color: isSelected ? const Color(0xFFF4E2CD) : const Color(0xFF331D0A),
+        color: isSelected ? AppColors.primaryTextDark : AppColors.secondaryTextDark,
       ),
-      selectedColor: activeColor,
-      backgroundColor: Colors.white,
+      selectedColor: activeColor.withValues(alpha: 0.4),
+      backgroundColor: AppColors.officialBackground,
       side: BorderSide(
-        color: isSelected ? activeColor : const Color(0xFFEAD7C0),
+        color: isSelected ? activeColor : AppColors.borderDark,
       ),
       onSelected: (selected) {
         setState(() {
@@ -448,28 +464,20 @@ class _OfficialPortalScreenState extends State<OfficialPortalScreen> {
 
   Widget _buildOfficialComplaintCard(WasteReport report) {
     final bool isResolved = report.status.toLowerCase() == 'resolved';
-    
-    // Status color scheme
-    Color statusColor;
+    final bool isInProgress = report.status.toLowerCase() == 'in progress';
+
     Color statusBg;
     IconData statusIcon;
 
-    switch (report.status.toLowerCase()) {
-      case 'resolved':
-        statusColor = const Color(0xFFF4E2CD);
-        statusBg = const Color(0xFF3A5A40); // Eco Accent Olive Forest #3A5A40
-        statusIcon = Icons.check_circle_rounded;
-        break;
-      case 'in progress':
-        statusColor = const Color(0xFFFAF4EC);
-        statusBg = const Color(0xFFD97706); // In-Progress Warm Amber #D97706
-        statusIcon = Icons.construction_rounded;
-        break;
-      default: // pending
-        statusColor = const Color(0xFFFAF4EC);
-        statusBg = const Color(0xFFD97706);
-        statusIcon = Icons.pending_actions_rounded;
-        break;
+    if (isResolved) {
+      statusBg = AppColors.statusResolved;
+      statusIcon = Icons.check_circle_rounded;
+    } else if (isInProgress) {
+      statusBg = AppColors.statusInProgress;
+      statusIcon = Icons.construction_rounded;
+    } else {
+      statusBg = AppColors.statusInProgress;
+      statusIcon = Icons.hourglass_top_rounded;
     }
 
     Uint8List? decodedImage;
@@ -482,21 +490,24 @@ class _OfficialPortalScreenState extends State<OfficialPortalScreen> {
     return Card(
       elevation: 2,
       margin: const EdgeInsets.only(bottom: 12),
-      color: const Color(0xFFFAF4EC), // Surface Cards Soft Warm White #FAF4EC
+      color: AppColors.officialCardSurface,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(10),
         side: BorderSide(
-          color: report.isUrgent ? const Color(0xFFB84A39) : const Color(0xFFEAD7C0),
+          color: report.isUrgent ? AppColors.urgentDanger : AppColors.borderDark,
           width: report.isUrgent ? 1.5 : 1,
         ),
       ),
       child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Top Header Line of Card with Case ID & Urgency
+          // Header Bar of Ticket Card
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
             decoration: BoxDecoration(
-              color: report.isUrgent ? const Color(0xFFFDF2F0) : const Color(0xFFF4E2CD),
+              color: report.isUrgent
+                  ? AppColors.urgentDanger.withValues(alpha: 0.2)
+                  : AppColors.officialBackground,
               borderRadius: const BorderRadius.only(
                 topLeft: Radius.circular(10),
                 topRight: Radius.circular(10),
@@ -507,13 +518,14 @@ class _OfficialPortalScreenState extends State<OfficialPortalScreen> {
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                   decoration: BoxDecoration(
-                    color: const Color(0xFF331D0A),
+                    color: AppColors.officialCardSurface,
                     borderRadius: BorderRadius.circular(4),
+                    border: Border.all(color: AppColors.borderDark),
                   ),
                   child: Text(
                     report.id,
                     style: const TextStyle(
-                      color: Color(0xFFF4E2CD),
+                      color: AppColors.primaryTextDark,
                       fontWeight: FontWeight.bold,
                       fontSize: 11,
                       letterSpacing: 0.5,
@@ -525,18 +537,18 @@ class _OfficialPortalScreenState extends State<OfficialPortalScreen> {
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                     decoration: BoxDecoration(
-                      color: const Color(0xFFB84A39), // Urgent Alert Terracotta Red #B84A39
+                      color: AppColors.urgentDanger,
                       borderRadius: BorderRadius.circular(4),
                     ),
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: const [
-                        Icon(Icons.warning_amber, color: Colors.white, size: 12),
+                        Icon(Icons.warning_amber, color: AppColors.primaryTextDark, size: 12),
                         SizedBox(width: 4),
                         Text(
                           'HIGH URGENCY',
                           style: TextStyle(
-                            color: Colors.white,
+                            color: AppColors.primaryTextDark,
                             fontWeight: FontWeight.bold,
                             fontSize: 10,
                           ),
@@ -554,12 +566,12 @@ class _OfficialPortalScreenState extends State<OfficialPortalScreen> {
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Icon(statusIcon, color: statusColor, size: 14),
+                      Icon(statusIcon, color: AppColors.primaryTextDark, size: 14),
                       const SizedBox(width: 4),
                       Text(
                         report.status.toUpperCase(),
-                        style: TextStyle(
-                          color: statusColor,
+                        style: const TextStyle(
+                          color: AppColors.primaryTextDark,
                           fontWeight: FontWeight.bold,
                           fontSize: 11,
                         ),
@@ -570,8 +582,8 @@ class _OfficialPortalScreenState extends State<OfficialPortalScreen> {
               ],
             ),
           ),
-          
-          const Divider(height: 1, thickness: 1, color: Color(0xFFEAD7C0)),
+
+          const Divider(height: 1, thickness: 1, color: AppColors.borderDark),
 
           // Body Content
           Padding(
@@ -595,7 +607,7 @@ class _OfficialPortalScreenState extends State<OfficialPortalScreen> {
                         children: [
                           Row(
                             children: [
-                              const Icon(Icons.location_on, color: Color(0xFFB84A39), size: 18),
+                              const Icon(Icons.location_on, color: AppColors.urgentDanger, size: 18),
                               const SizedBox(width: 4),
                               Expanded(
                                 child: Text(
@@ -603,7 +615,7 @@ class _OfficialPortalScreenState extends State<OfficialPortalScreen> {
                                   style: const TextStyle(
                                     fontSize: 15,
                                     fontWeight: FontWeight.bold,
-                                    color: Color(0xFF331D0A),
+                                    color: AppColors.primaryTextDark,
                                   ),
                                 ),
                               ),
@@ -616,7 +628,7 @@ class _OfficialPortalScreenState extends State<OfficialPortalScreen> {
                                 'GPS: ${report.latitude!.toStringAsFixed(4)}, ${report.longitude!.toStringAsFixed(4)}',
                                 style: const TextStyle(
                                   fontSize: 11,
-                                  color: Color(0xFF331D0A),
+                                  color: AppColors.secondaryTextDark,
                                   fontFamily: 'monospace',
                                   fontWeight: FontWeight.w600,
                                 ),
@@ -627,7 +639,7 @@ class _OfficialPortalScreenState extends State<OfficialPortalScreen> {
                               padding: const EdgeInsets.only(top: 4.0, left: 22.0),
                               child: Text(
                                 'Notes: ${report.notes}',
-                                style: const TextStyle(fontSize: 12, color: Color(0xFF664D38)),
+                                style: const TextStyle(fontSize: 12, color: AppColors.secondaryTextDark),
                               ),
                             ),
                         ],
@@ -639,31 +651,46 @@ class _OfficialPortalScreenState extends State<OfficialPortalScreen> {
                 Row(
                   children: [
                     Chip(
-                      avatar: const Icon(Icons.category, size: 14, color: Color(0xFF331D0A)),
+                      avatar: const Icon(Icons.category, size: 14, color: AppColors.primaryTextDark),
                       label: Text('Category: ${report.category}'),
-                      labelStyle: const TextStyle(fontSize: 11, color: Color(0xFF331D0A)),
-                      backgroundColor: const Color(0xFFF4E2CD),
+                      labelStyle: const TextStyle(fontSize: 11, color: AppColors.primaryTextDark),
+                      backgroundColor: AppColors.officialBackground,
+                      side: const BorderSide(color: AppColors.borderDark),
                       visualDensity: VisualDensity.compact,
                       padding: EdgeInsets.zero,
+                    ),
+                    const Spacer(),
+                    // Inspection Drill-Down Button
+                    TextButton.icon(
+                      style: TextButton.styleFrom(visualDensity: VisualDensity.compact),
+                      icon: const Icon(Icons.open_in_new, size: 14, color: AppColors.secondaryTextDark),
+                      label: const Text('Inspect Detail', style: TextStyle(fontSize: 11, color: AppColors.secondaryTextDark)),
+                      onPressed: () async {
+                        await Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (context) => EditReportScreen(report: report),
+                          ),
+                        );
+                        _loadData();
+                      },
                     ),
                   ],
                 ),
                 const SizedBox(height: 12),
 
-                // Direct Action Controls: MARK AS RESOLVED (#3A5A40) with #F4E2CD text
+                // Administrative Action Controls
                 Container(
                   padding: const EdgeInsets.all(10),
                   decoration: BoxDecoration(
-                    color: isResolved ? const Color(0xFFF4E2CD) : const Color(0xFFFAF4EC),
+                    color: AppColors.officialBackground,
                     borderRadius: BorderRadius.circular(8),
-                    border: Border.all(
-                      color: isResolved ? const Color(0xFF3A5A40) : const Color(0xFFEAD7C0),
-                    ),
+                    border: Border.all(color: AppColors.borderDark),
                   ),
                   child: Row(
                     children: [
                       if (isResolved) ...[
-                        const Icon(Icons.check_circle, color: Color(0xFF3A5A40), size: 22),
+                        const Icon(Icons.check_circle, color: AppColors.statusResolved, size: 22),
                         const SizedBox(width: 8),
                         const Expanded(
                           child: Text(
@@ -671,58 +698,42 @@ class _OfficialPortalScreenState extends State<OfficialPortalScreen> {
                             style: TextStyle(
                               fontSize: 13,
                               fontWeight: FontWeight.bold,
-                              color: Color(0xFF3A5A40),
+                              color: AppColors.statusResolved,
                             ),
                           ),
-                        ),
-                        OutlinedButton(
-                          style: OutlinedButton.styleFrom(
-                            visualDensity: VisualDensity.compact,
-                            side: const BorderSide(color: Color(0xFF331D0A)),
-                          ),
-                          onPressed: () => _updateStatus(report, 'Pending'),
-                          child: const Text('Re-open Case', style: TextStyle(fontSize: 11, color: Color(0xFF331D0A))),
                         ),
                       ] else ...[
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              const Text(
-                                'Administrative Action:',
-                                style: TextStyle(
-                                  fontSize: 11,
-                                  fontWeight: FontWeight.w600,
-                                  color: Color(0xFF664D38),
-                                ),
-                              ),
-                              if (report.status.toLowerCase() == 'pending')
-                                TextButton(
-                                  style: TextButton.styleFrom(
-                                    padding: EdgeInsets.zero,
-                                    visualDensity: VisualDensity.compact,
-                                  ),
-                                  onPressed: () => _updateStatus(report, 'In Progress'),
-                                  child: const Text('Dispatch Crew (In Progress)', style: TextStyle(fontSize: 11, color: Color(0xFFD97706))),
-                                ),
-                            ],
+                        if (report.status.toLowerCase() == 'pending') ...[
+                          // Secondary MARK AS IN PROGRESS button
+                          ElevatedButton.icon(
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: AppColors.statusInProgress,
+                              foregroundColor: AppColors.primaryTextDark,
+                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+                            ),
+                            icon: const Icon(Icons.construction, size: 16),
+                            label: const Text('MARK IN PROGRESS', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
+                            onPressed: () => _markInProgress(report),
                           ),
-                        ),
-                        // Primary MARK AS RESOLVED (#3A5A40) Button with #F4E2CD text
+                          const SizedBox(width: 8),
+                        ],
+
+                        const Spacer(),
+
+                        // Prominent MARK AS RESOLVED button
                         ElevatedButton.icon(
                           style: ElevatedButton.styleFrom(
-                            backgroundColor: const Color(0xFF3A5A40), // Eco Accent Olive Forest #3A5A40
-                            foregroundColor: const Color(0xFFF4E2CD), // Linen/Cream #F4E2CD text
+                            backgroundColor: AppColors.statusResolved,
+                            foregroundColor: AppColors.primaryTextDark,
                             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
                             elevation: 2,
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(6),
-                            ),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
                           ),
-                          icon: const Icon(Icons.check_circle, size: 18, color: Color(0xFFF4E2CD)),
+                          icon: const Icon(Icons.check_circle, size: 18),
                           label: const Text(
                             'MARK AS RESOLVED',
-                            style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, letterSpacing: 0.3, color: Color(0xFFF4E2CD)),
+                            style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, letterSpacing: 0.3),
                           ),
                           onPressed: () => _resolveComplaint(report),
                         ),
@@ -743,20 +754,16 @@ class _OfficialPortalScreenState extends State<OfficialPortalScreen> {
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: const [
-          Icon(Icons.assignment_turned_in, size: 64, color: Color(0xFF331D0A)),
+          Icon(Icons.assignment_turned_in, size: 64, color: AppColors.primaryTextDark),
           SizedBox(height: 12),
           Text(
             'No matching complaints found',
-            style: TextStyle(
-              fontSize: 16,
-              fontWeight: FontWeight.bold,
-              color: Color(0xFF331D0A),
-            ),
+            style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: AppColors.primaryTextDark),
           ),
           SizedBox(height: 6),
           Text(
-            'All municipal sanitation reports cleared by the department.',
-            style: TextStyle(fontSize: 12, color: Color(0xFF664D38)),
+            'All municipal sanitation reports in this view are cleared.',
+            style: TextStyle(fontSize: 12, color: AppColors.secondaryTextDark),
           ),
         ],
       ),
