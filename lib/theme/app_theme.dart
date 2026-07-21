@@ -1,28 +1,26 @@
 import 'package:flutter/material.dart';
 
 /// Centralized Theme & Color Palette for TrashTrack (binit)
-/// Option 3: "High-Contrast Command" (Civic Teal Palette)
+/// "High-Contrast Command" Palette
 class AppColors {
-  // Palette Roles & Surfaces
-  static const Color citizenBackground = Color(0xFFF2F7F4);
-  static const Color citizenCardSurface = Color(0xFFFFFFFF);
-  static const Color officialBackground = Color(0xFF0F2E24);
-  static const Color officialCardSurface = Color(0xFF173A2C);
+  // Theme Palette Constants
+  static const Color citizenBackground   = Color(0xFFF4E2CD); // Warm Cream
+  static const Color officialBackground  = Color(0xFF211307); // Dark Slate Espresso
+  static const Color cardDark            = Color(0xFF331D0A); // Deep Espresso
+  static const Color citizenCardSurface  = Color(0xFFFAF4EC); // Soft Cream
+  static const Color statusResolved      = Color(0xFF10B981); // Emerald
+  static const Color statusInProgress    = Color(0xFFF59E0B); // Signal Amber
+  static const Color statusUrgent        = Color(0xFFEF4444); // Crimson
 
-  // Status & Priority Indicators
-  static const Color statusResolved = Color(0xFF1D9E75);
-  static const Color statusInProgress = Color(0xFFE0A527);
-  static const Color urgentDanger = Color(0xFFD1495B);
-
-  // Primary Text & Icons
-  static const Color primaryTextLight = Color(0xFF0F2E24); // For light backgrounds
-  static const Color primaryTextDark = Color(0xFFF2F7F4);  // For dark backgrounds
-  static const Color secondaryTextLight = Color(0xFF4A6056);
-  static const Color secondaryTextDark = Color(0xFFA3B8AE);
-
-  // Border & Divider Colors
-  static const Color borderLight = Color(0xFFD0E0D8);
-  static const Color borderDark = Color(0xFF24503E);
+  // Helper Aliases & Text/Border Tokens for High-Contrast UI
+  static const Color officialCardSurface = Color(0xFF331D0A); // Deep Espresso
+  static const Color urgentDanger        = Color(0xFFEF4444); // Crimson
+  static const Color primaryTextLight    = Color(0xFF211307); // Dark Slate Espresso for Light Surfaces
+  static const Color primaryTextDark     = Color(0xFFFAF4EC); // Soft Cream for Dark Surfaces
+  static const Color secondaryTextLight  = Color(0xFF6E5D4F); // Muted Dark Brown
+  static const Color secondaryTextDark   = Color(0xFFD4C3B3); // Muted Warm Cream
+  static const Color borderLight         = Color(0xFFE2D2C0); // Light Sand Border
+  static const Color borderDark          = Color(0xFF4A321E); // Dark Espresso Border
 }
 
 class AppTheme {
@@ -35,14 +33,14 @@ class AppTheme {
         seedColor: AppColors.primaryTextLight,
         primary: AppColors.primaryTextLight,
         surface: AppColors.citizenCardSurface,
-        error: AppColors.urgentDanger,
+        error: AppColors.statusUrgent,
       ),
       appBarTheme: const AppBarTheme(
         backgroundColor: AppColors.primaryTextLight,
         foregroundColor: AppColors.primaryTextDark,
         elevation: 0,
       ),
-      cardTheme: CardTheme(
+      cardTheme: CardThemeData(
         color: AppColors.citizenCardSurface,
         elevation: 2,
         shape: RoundedRectangleBorder(
@@ -62,14 +60,14 @@ class AppTheme {
         seedColor: AppColors.officialCardSurface,
         primary: AppColors.officialCardSurface,
         surface: AppColors.officialCardSurface,
-        error: AppColors.urgentDanger,
+        error: AppColors.statusUrgent,
       ),
       appBarTheme: const AppBarTheme(
         backgroundColor: AppColors.officialBackground,
         foregroundColor: AppColors.primaryTextDark,
         elevation: 0,
       ),
-      cardTheme: CardTheme(
+      cardTheme: CardThemeData(
         color: AppColors.officialCardSurface,
         elevation: 2,
         shape: RoundedRectangleBorder(

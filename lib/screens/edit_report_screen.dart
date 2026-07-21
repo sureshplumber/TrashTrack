@@ -1,9 +1,9 @@
-import 'dart:convert';
-import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import '../models/waste_report.dart';
-import '../services/local_storage.dart';
+import '../models/user_profile.dart';
+import '../services/firebase_service.dart';
 import '../theme/app_theme.dart';
+import '../widgets/report_image.dart';
 
 class EditReportScreen extends StatefulWidget {
   final WasteReport report;
@@ -22,7 +22,7 @@ class _EditReportScreenState extends State<EditReportScreen> {
   late bool _isUrgent;
   late String _status;
   
-  String? _userRole;
+  UserProfile? _userProfile;
   bool _isLoadingRole = true;
 
   final List<String> _categories = [
@@ -52,12 +52,21 @@ class _EditReportScreenState extends State<EditReportScreen> {
   }
 
   Future<void> _fetchUserRole() async {
-    final userData = await LocalStorageService.getCurrentUser();
-    if (mounted) {
-      setState(() {
-        _userRole = userData?['role'] ?? 'citizen';
-        _isLoadingRole = false;
-      });
+    final user = FirebaseService.currentUser;
+    if (user != null) {
+      final profile = await FirebaseService.getUserProfile(user.uid);
+      if (mounted) {
+        setState(() {
+          _userProfile = profile;
+          _isLoadingRole = false;
+        });
+      }
+    } else {
+      if (mounted) {
+        setState(() {
+          _isLoadingRole = false;
+        });
+      }
     }
   }
 
@@ -66,7 +75,7 @@ class _EditReportScreenState extends State<EditReportScreen> {
   /// - Officials use this screen purely as a read-only detail inspector.
   /// - Citizens can edit pre-Resolved tickets (Pending / In Progress). Once Resolved, fields are locked.
   bool get _isEditable {
-    if (_userRole == 'official') return false;
+    if (_userProfile?.role == 'official') return false;
     return _status.toLowerCase() != 'resolved';
   }
 
@@ -81,7 +90,7 @@ class _EditReportScreenState extends State<EditReportScreen> {
       notes: _notesController.text.trim(),
     );
 
-    await LocalStorageService.updateReport(updated);
+    await FirebaseService.updateReport(updated);
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -95,14 +104,7 @@ class _EditReportScreenState extends State<EditReportScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final isOfficial = _userRole == 'official';
-
-    Uint8List? decodedImage;
-    if (widget.report.imageBase64 != null && widget.report.imageBase64!.isNotEmpty) {
-      try {
-        decodedImage = base64Decode(widget.report.imageBase64!);
-      } catch (_) {}
-    }
+    final isOfficial = _userProfile?.role == 'official';
 
     final bgColor = isOfficial ? AppColors.officialBackground : AppColors.citizenBackground;
     final cardColor = isOfficial ? AppColors.officialCardSurface : AppColors.citizenCardSurface;
@@ -175,7 +177,7 @@ class _EditReportScreenState extends State<EditReportScreen> {
                     const SizedBox(height: 16),
 
                     // Photo Evidence Preview if present
-                    if (decodedImage != null) ...[
+                    if (widget.report.imageBase64 != null && widget.report.imageBase64!.isNotEmpty) ...[
                       Text(
                         'Attached Photo Evidence:',
                         style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: textColor),
@@ -184,11 +186,15 @@ class _EditReportScreenState extends State<EditReportScreen> {
                       Center(
                         child: ClipRRect(
                           borderRadius: BorderRadius.circular(12),
-                          child: Image.memory(
-                            decodedImage,
+                          child: buildReportImage(
+                            widget.report.imageBase64,
                             height: 180,
                             width: double.infinity,
-                            fit: BoxFit.cover,
+                            fallbackWidget: Container(
+                              height: 180,
+                              color: cardColor,
+                              child: const Icon(Icons.broken_image, color: AppColors.statusUrgent, size: 40),
+                            ),
                           ),
                         ),
                       ),
@@ -292,7 +298,7 @@ class _EditReportScreenState extends State<EditReportScreen> {
                         children: [
                           Row(
                             children: [
-                              const Icon(Icons.warning_amber_rounded, color: AppColors.urgentDanger),
+                              const Icon(Icons.warning_amber_rounded, color: AppColors.statusUrgent),
                               const SizedBox(width: 8),
                               Text(
                                 'High Urgency Priority',
@@ -302,7 +308,7 @@ class _EditReportScreenState extends State<EditReportScreen> {
                           ),
                           Switch(
                             value: _isUrgent,
-                            activeThumbColor: AppColors.urgentDanger,
+                            activeThumbColor: AppColors.statusUrgent,
                             onChanged: _isEditable ? (val) => setState(() => _isUrgent = val) : null,
                           ),
                         ],
@@ -324,7 +330,7 @@ class _EditReportScreenState extends State<EditReportScreen> {
                           ),
                           icon: const Icon(Icons.save, size: 20),
                           onPressed: _saveChanges,
-                          child: const Text(
+                          label: const Text(
                             'SAVE CHANGES',
                             style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
                           ),

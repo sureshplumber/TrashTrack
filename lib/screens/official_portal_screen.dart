@@ -1,9 +1,8 @@
-import 'dart:convert';
-import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import '../models/waste_report.dart';
-import '../services/local_storage.dart';
+import '../services/firebase_service.dart';
 import '../theme/app_theme.dart';
+import '../widgets/report_image.dart';
 import 'edit_report_screen.dart';
 import 'login_screen.dart';
 
@@ -15,56 +14,22 @@ class OfficialPortalScreen extends StatefulWidget {
 }
 
 class _OfficialPortalScreenState extends State<OfficialPortalScreen> {
-  List<WasteReport> _allReports = [];
-  bool _isLoading = true;
   String _searchQuery = '';
   String _selectedStatusFilter = 'All';
   bool _urgentFirstSort = true;
 
-  @override
-  void initState() {
-    super.initState();
-    _loadData();
-  }
-
-  @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    _loadData();
-  }
-
-  Future<void> _loadData() async {
-    final data = await LocalStorageService.getAllReports();
-    if (mounted) {
-      setState(() {
-        _allReports = data;
-        _isLoading = false;
-      });
-    }
-  }
-
   Future<void> _logout() async {
-    await LocalStorageService.logout();
+    await FirebaseService.signOut();
     if (mounted) {
       Navigator.of(context).pushAndRemoveUntil(
-        MaterialPageRoute(
-          builder: (context) => LoginScreen(
-            onLoginSuccess: () {
-              Navigator.of(context).pushAndRemoveUntil(
-                MaterialPageRoute(builder: (_) => const TrashTrackWrapper()),
-                (route) => false,
-              );
-            },
-          ),
-        ),
+        MaterialPageRoute(builder: (_) => const LoginScreen()),
         (route) => false,
       );
     }
   }
 
   Future<void> _resolveComplaint(WasteReport report) async {
-    report.status = 'Resolved';
-    await LocalStorageService.updateReport(report);
+    await FirebaseService.updateReportStatus(report.id, 'Resolved');
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -77,12 +42,10 @@ class _OfficialPortalScreenState extends State<OfficialPortalScreen> {
         ),
       );
     }
-    _loadData();
   }
 
   Future<void> _markInProgress(WasteReport report) async {
-    report.status = 'In Progress';
-    await LocalStorageService.updateReport(report);
+    await FirebaseService.updateReportStatus(report.id, 'In Progress');
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -95,11 +58,10 @@ class _OfficialPortalScreenState extends State<OfficialPortalScreen> {
         ),
       );
     }
-    _loadData();
   }
 
-  List<WasteReport> get _filteredReports {
-    final filtered = _allReports.where((report) {
+  List<WasteReport> _filterAndSortReports(List<WasteReport> allReports) {
+    final filtered = allReports.where((report) {
       // Status & Urgency filter
       if (_selectedStatusFilter == 'Urgent') {
         if (!report.isUrgent) return false;
@@ -122,7 +84,7 @@ class _OfficialPortalScreenState extends State<OfficialPortalScreen> {
       return true;
     }).toList();
 
-    // Sort logic: Urgent first (if enabled), then reverse chronological
+    // Sort logic: Urgent first (if enabled), then reverse chronological by createdAt
     filtered.sort((a, b) {
       if (_urgentFirstSort) {
         if (a.isUrgent && !b.isUrgent) return -1;
@@ -136,13 +98,6 @@ class _OfficialPortalScreenState extends State<OfficialPortalScreen> {
 
   @override
   Widget build(BuildContext context) {
-    // Live KPI analytics counters
-    final totalCount = _allReports.length;
-    final urgentCount = _allReports.where((r) => r.isUrgent).length;
-    final pendingCount = _allReports.where((r) => r.status.toLowerCase() == 'pending').length;
-    final inProgressCount = _allReports.where((r) => r.status.toLowerCase() == 'in progress').length;
-    final resolvedCount = _allReports.where((r) => r.status.toLowerCase() == 'resolved').length;
-
     return Scaffold(
       backgroundColor: AppColors.officialBackground,
       appBar: AppBar(
@@ -175,81 +130,107 @@ class _OfficialPortalScreenState extends State<OfficialPortalScreen> {
         ),
         actions: [
           IconButton(
-            icon: const Icon(Icons.refresh, color: AppColors.primaryTextDark),
-            tooltip: 'Refresh Complaints',
-            onPressed: _loadData,
-          ),
-          IconButton(
-            icon: const Icon(Icons.logout, color: AppColors.urgentDanger),
+            icon: const Icon(Icons.logout, color: AppColors.statusUrgent),
             tooltip: 'Official Logout',
             onPressed: _logout,
           ),
         ],
       ),
-      body: _isLoading
-          ? const Center(child: CircularProgressIndicator(color: AppColors.primaryTextDark))
-          : Column(
-              children: [
-                // Top Executive KPI Control Panel
-                _buildKpiBanner(
-                  total: totalCount,
-                  urgent: urgentCount,
-                  pending: pendingCount,
-                  inProgress: inProgressCount,
-                  resolved: resolvedCount,
+      body: StreamBuilder<List<WasteReport>>(
+        stream: FirebaseService.getAllReportsStream(),
+        builder: (context, snapshot) {
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return const Center(child: CircularProgressIndicator(color: AppColors.primaryTextDark));
+          }
+
+          if (snapshot.hasError) {
+            return Center(
+              child: Padding(
+                padding: const EdgeInsets.all(16.0),
+                child: Text(
+                  'Error loading command center feed: ${snapshot.error}',
+                  style: const TextStyle(color: AppColors.statusUrgent),
+                  textAlign: TextAlign.center,
                 ),
+              ),
+            );
+          }
 
-                // Search & Filters Control Bar
-                _buildSearchAndFilterBar(),
+          final allReports = snapshot.data ?? [];
 
-                // Subheader with Sort Toggle & Registry Count
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
-                  child: Row(
-                    children: [
-                      const Icon(Icons.verified_user_outlined, size: 18, color: AppColors.statusResolved),
-                      const SizedBox(width: 6),
-                      Text(
-                        'Complaints Registry (${_filteredReports.length})',
-                        style: const TextStyle(
-                          fontSize: 14,
-                          fontWeight: FontWeight.bold,
-                          color: AppColors.primaryTextDark,
-                        ),
+          // Live KPI analytics counters recomputed directly from stream
+          final totalCount = allReports.length;
+          final urgentCount = allReports.where((r) => r.isUrgent).length;
+          final pendingCount = allReports.where((r) => r.status.toLowerCase() == 'pending').length;
+          final inProgressCount = allReports.where((r) => r.status.toLowerCase() == 'in progress').length;
+          final resolvedCount = allReports.where((r) => r.status.toLowerCase() == 'resolved').length;
+
+          final filteredReports = _filterAndSortReports(allReports);
+
+          return Column(
+            children: [
+              // Top Executive KPI Control Panel
+              _buildKpiBanner(
+                total: totalCount,
+                urgent: urgentCount,
+                pending: pendingCount,
+                inProgress: inProgressCount,
+                resolved: resolvedCount,
+              ),
+
+              // Search & Filters Control Bar
+              _buildSearchAndFilterBar(),
+
+              // Subheader with Sort Toggle & Registry Count
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
+                child: Row(
+                  children: [
+                    const Icon(Icons.verified_user_outlined, size: 18, color: AppColors.statusResolved),
+                    const SizedBox(width: 6),
+                    Text(
+                      'Complaints Registry (${filteredReports.length})',
+                      style: const TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.bold,
+                        color: AppColors.primaryTextDark,
                       ),
-                      const Spacer(),
-                      // Urgent-first sort toggle
-                      FilterChip(
-                        selected: _urgentFirstSort,
-                        showCheckmark: true,
-                        checkmarkColor: AppColors.primaryTextDark,
-                        avatar: const Icon(Icons.sort, size: 14, color: AppColors.primaryTextDark),
-                        label: const Text('Urgent First'),
-                        labelStyle: const TextStyle(fontSize: 11, color: AppColors.primaryTextDark),
-                        selectedColor: AppColors.urgentDanger.withValues(alpha: 0.4),
-                        backgroundColor: AppColors.officialCardSurface,
-                        side: const BorderSide(color: AppColors.borderDark),
-                        onSelected: (val) => setState(() => _urgentFirstSort = val),
-                      ),
-                    ],
-                  ),
+                    ),
+                    const Spacer(),
+                    // Urgent-first sort toggle
+                    FilterChip(
+                      selected: _urgentFirstSort,
+                      showCheckmark: true,
+                      checkmarkColor: AppColors.primaryTextDark,
+                      avatar: const Icon(Icons.sort, size: 14, color: AppColors.primaryTextDark),
+                      label: const Text('Urgent First'),
+                      labelStyle: const TextStyle(fontSize: 11, color: AppColors.primaryTextDark),
+                      selectedColor: AppColors.statusUrgent.withValues(alpha: 0.4),
+                      backgroundColor: AppColors.officialCardSurface,
+                      side: const BorderSide(color: AppColors.borderDark),
+                      onSelected: (val) => setState(() => _urgentFirstSort = val),
+                    ),
+                  ],
                 ),
+              ),
 
-                // Complaints List View (Note: HARD CONSTRAINT - NO FAB, NO CREATE UI ANYWHERE)
-                Expanded(
-                  child: _filteredReports.isEmpty
-                      ? _buildEmptyState()
-                      : ListView.builder(
-                          padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
-                          itemCount: _filteredReports.length,
-                          itemBuilder: (ctx, index) {
-                            final report = _filteredReports[index];
-                            return _buildOfficialComplaintCard(report);
-                          },
-                        ),
-                ),
-              ],
-            ),
+              // Complaints List View (HARD CONSTRAINT - ZERO CREATE/SUBMIT UI ANYWHERE)
+              Expanded(
+                child: filteredReports.isEmpty
+                    ? _buildEmptyState()
+                    : ListView.builder(
+                        padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
+                        itemCount: filteredReports.length,
+                        itemBuilder: (ctx, index) {
+                          final report = filteredReports[index];
+                          return _buildOfficialComplaintCard(report);
+                        },
+                      ),
+              ),
+            ],
+          );
+        },
+      ),
     );
   }
 
@@ -280,7 +261,7 @@ class _OfficialPortalScreenState extends State<OfficialPortalScreen> {
               title: 'Urgent Alerts',
               value: urgent.toString(),
               icon: Icons.warning_amber_rounded,
-              accentColor: AppColors.urgentDanger,
+              accentColor: AppColors.statusUrgent,
               filterKey: 'Urgent',
             ),
             const SizedBox(width: 8),
@@ -418,7 +399,7 @@ class _OfficialPortalScreenState extends State<OfficialPortalScreen> {
               children: [
                 _buildFilterChip('All'),
                 const SizedBox(width: 8),
-                _buildFilterChip('Urgent', icon: Icons.warning_amber_rounded, color: AppColors.urgentDanger),
+                _buildFilterChip('Urgent', icon: Icons.warning_amber_rounded, color: AppColors.statusUrgent),
                 const SizedBox(width: 8),
                 _buildFilterChip('Pending', icon: Icons.timer_outlined, color: AppColors.statusInProgress),
                 const SizedBox(width: 8),
@@ -480,13 +461,6 @@ class _OfficialPortalScreenState extends State<OfficialPortalScreen> {
       statusIcon = Icons.hourglass_top_rounded;
     }
 
-    Uint8List? decodedImage;
-    if (report.imageBase64 != null && report.imageBase64!.isNotEmpty) {
-      try {
-        decodedImage = base64Decode(report.imageBase64!);
-      } catch (_) {}
-    }
-
     return Card(
       elevation: 2,
       margin: const EdgeInsets.only(bottom: 12),
@@ -494,7 +468,7 @@ class _OfficialPortalScreenState extends State<OfficialPortalScreen> {
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(10),
         side: BorderSide(
-          color: report.isUrgent ? AppColors.urgentDanger : AppColors.borderDark,
+          color: report.isUrgent ? AppColors.statusUrgent : AppColors.borderDark,
           width: report.isUrgent ? 1.5 : 1,
         ),
       ),
@@ -506,7 +480,7 @@ class _OfficialPortalScreenState extends State<OfficialPortalScreen> {
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
             decoration: BoxDecoration(
               color: report.isUrgent
-                  ? AppColors.urgentDanger.withValues(alpha: 0.2)
+                  ? AppColors.statusUrgent.withValues(alpha: 0.2)
                   : AppColors.officialBackground,
               borderRadius: const BorderRadius.only(
                 topLeft: Radius.circular(10),
@@ -537,7 +511,7 @@ class _OfficialPortalScreenState extends State<OfficialPortalScreen> {
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                     decoration: BoxDecoration(
-                      color: AppColors.urgentDanger,
+                      color: AppColors.statusUrgent,
                       borderRadius: BorderRadius.circular(4),
                     ),
                     child: Row(
@@ -546,7 +520,7 @@ class _OfficialPortalScreenState extends State<OfficialPortalScreen> {
                         Icon(Icons.warning_amber, color: AppColors.primaryTextDark, size: 12),
                         SizedBox(width: 4),
                         Text(
-                          'HIGH URGENCY',
+                          'URGENT',
                           style: TextStyle(
                             color: AppColors.primaryTextDark,
                             fontWeight: FontWeight.bold,
@@ -594,10 +568,20 @@ class _OfficialPortalScreenState extends State<OfficialPortalScreen> {
                 Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    if (decodedImage != null) ...[
+                    if (report.imageBase64 != null && report.imageBase64!.isNotEmpty) ...[
                       ClipRRect(
                         borderRadius: BorderRadius.circular(8),
-                        child: Image.memory(decodedImage, width: 75, height: 75, fit: BoxFit.cover),
+                        child: buildReportImage(
+                          report.imageBase64,
+                          width: 75,
+                          height: 75,
+                          fallbackWidget: Container(
+                            width: 75,
+                            height: 75,
+                            color: AppColors.officialBackground,
+                            child: const Icon(Icons.broken_image, color: AppColors.statusUrgent, size: 24),
+                          ),
+                        ),
                       ),
                       const SizedBox(width: 12),
                     ],
@@ -607,7 +591,7 @@ class _OfficialPortalScreenState extends State<OfficialPortalScreen> {
                         children: [
                           Row(
                             children: [
-                              const Icon(Icons.location_on, color: AppColors.urgentDanger, size: 18),
+                              const Icon(Icons.location_on, color: AppColors.statusUrgent, size: 18),
                               const SizedBox(width: 4),
                               Expanded(
                                 child: Text(
@@ -632,6 +616,14 @@ class _OfficialPortalScreenState extends State<OfficialPortalScreen> {
                                   fontFamily: 'monospace',
                                   fontWeight: FontWeight.w600,
                                 ),
+                              ),
+                            ),
+                          if (report.userName.isNotEmpty)
+                            Padding(
+                              padding: const EdgeInsets.only(top: 2.0, left: 22.0),
+                              child: Text(
+                                'Reporter: ${report.userName}',
+                                style: const TextStyle(fontSize: 11, color: AppColors.secondaryTextDark),
                               ),
                             ),
                           if (report.notes != null && report.notes!.isNotEmpty)
@@ -665,14 +657,13 @@ class _OfficialPortalScreenState extends State<OfficialPortalScreen> {
                       style: TextButton.styleFrom(visualDensity: VisualDensity.compact),
                       icon: const Icon(Icons.open_in_new, size: 14, color: AppColors.secondaryTextDark),
                       label: const Text('Inspect Detail', style: TextStyle(fontSize: 11, color: AppColors.secondaryTextDark)),
-                      onPressed: () async {
-                        await Navigator.push(
+                      onPressed: () {
+                        Navigator.push(
                           context,
                           MaterialPageRoute(
                             builder: (context) => EditReportScreen(report: report),
                           ),
                         );
-                        _loadData();
                       },
                     ),
                   ],
@@ -704,7 +695,7 @@ class _OfficialPortalScreenState extends State<OfficialPortalScreen> {
                         ),
                       ] else ...[
                         if (report.status.toLowerCase() == 'pending') ...[
-                          // Secondary MARK AS IN PROGRESS button
+                          // Secondary MARK AS IN PROGRESS button (#F59E0B)
                           ElevatedButton.icon(
                             style: ElevatedButton.styleFrom(
                               backgroundColor: AppColors.statusInProgress,
@@ -721,7 +712,7 @@ class _OfficialPortalScreenState extends State<OfficialPortalScreen> {
 
                         const Spacer(),
 
-                        // Prominent MARK AS RESOLVED button
+                        // Prominent MARK AS RESOLVED button (#10B981)
                         ElevatedButton.icon(
                           style: ElevatedButton.styleFrom(
                             backgroundColor: AppColors.statusResolved,

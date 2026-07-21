@@ -1,7 +1,9 @@
-import 'dart:convert';
+import 'package:cloud_firestore/cloud_firestore.dart';
 
 class WasteReport {
   final String id;
+  final String userId;
+  final String userName;
   final String location;
   final String category;
   final bool isUrgent;
@@ -28,6 +30,8 @@ class WasteReport {
 
   WasteReport({
     required this.id,
+    required this.userId,
+    required this.userName,
     required this.location,
     required this.category,
     required this.isUrgent,
@@ -44,6 +48,8 @@ class WasteReport {
   Map<String, dynamic> toMap() {
     return {
       'id': id,
+      'userId': userId,
+      'userName': userName,
       'location': location,
       'category': category,
       'isUrgent': isUrgent,
@@ -57,10 +63,12 @@ class WasteReport {
   }
 
   /// Default-safe parsing factory to ensure [fromMap] never throws on missing/malformed keys.
-  factory WasteReport.fromMap(Map<String, dynamic>? map) {
+  factory WasteReport.fromMap(Map<String, dynamic>? map, [String? docId]) {
     if (map == null) {
       return WasteReport(
-        id: 'CMP-${DateTime.now().millisecondsSinceEpoch}',
+        id: docId ?? 'CMP-${DateTime.now().millisecondsSinceEpoch}',
+        userId: '',
+        userName: 'Anonymous',
         location: 'Unknown Location',
         category: 'Plastic',
         isUrgent: false,
@@ -69,10 +77,14 @@ class WasteReport {
     }
 
     // Safely parse ID
-    final rawId = map['id']?.toString().trim();
+    final rawId = docId ?? map['id']?.toString().trim();
     final safeId = (rawId != null && rawId.isNotEmpty)
         ? rawId
         : 'CMP-${DateTime.now().millisecondsSinceEpoch}';
+
+    // Safely parse User ID & Name
+    final safeUserId = map['userId']?.toString().trim() ?? '';
+    final safeUserName = map['userName']?.toString().trim() ?? 'Citizen User';
 
     // Safely parse Location
     final rawLoc = map['location']?.toString().trim();
@@ -96,7 +108,7 @@ class WasteReport {
       safeUrgent = s == 'true' || s == '1';
     }
 
-    // Safely parse Status (enforce state machine values: Pending, In Progress, Resolved)
+    // Safely parse Status
     final rawStatus = map['status']?.toString().trim();
     String safeStatus = 'Pending';
     if (rawStatus != null) {
@@ -126,22 +138,27 @@ class WasteReport {
       safeLng = double.tryParse(rawLng.toString());
     }
 
-    // Safely parse Image Base64
-    final rawImg = map['imageBase64']?.toString();
+    // Safely parse Image Base64 (handling legacy imageUrl if present as fallback)
+    final rawImg = (map['imageBase64'] ?? map['imageUrl'])?.toString();
     final safeImage = (rawImg != null && rawImg.isNotEmpty) ? rawImg : null;
 
-    // Safely parse Notes (supporting fallback 'description' key)
+    // Safely parse Notes
     final rawNotes = (map['notes'] ?? map['description'])?.toString();
     final safeNotes = (rawNotes != null && rawNotes.isNotEmpty) ? rawNotes : null;
 
-    // Safely parse CreatedAt
-    final rawCreated = map['createdAt']?.toString();
-    final safeCreated = (rawCreated != null && rawCreated.isNotEmpty)
-        ? rawCreated
-        : DateTime.now().toIso8601String();
+    // Safely parse CreatedAt (string or Firestore Timestamp)
+    String safeCreated = DateTime.now().toIso8601String();
+    final rawCreated = map['createdAt'];
+    if (rawCreated is Timestamp) {
+      safeCreated = rawCreated.toDate().toIso8601String();
+    } else if (rawCreated != null && rawCreated.toString().isNotEmpty) {
+      safeCreated = rawCreated.toString();
+    }
 
     return WasteReport(
       id: safeId,
+      userId: safeUserId,
+      userName: safeUserName,
       location: safeLocation,
       category: safeCategory,
       isUrgent: safeUrgent,
@@ -154,20 +171,10 @@ class WasteReport {
     );
   }
 
-  String toJson() => json.encode(toMap());
-
-  factory WasteReport.fromJson(String source) {
-    try {
-      final dynamic decoded = json.decode(source);
-      if (decoded is Map<String, dynamic>) {
-        return WasteReport.fromMap(decoded);
-      }
-    } catch (_) {}
-    return WasteReport.fromMap(null);
-  }
-
   WasteReport copyWith({
     String? id,
+    String? userId,
+    String? userName,
     String? location,
     String? category,
     bool? isUrgent,
@@ -180,6 +187,8 @@ class WasteReport {
   }) {
     return WasteReport(
       id: id ?? this.id,
+      userId: userId ?? this.userId,
+      userName: userName ?? this.userName,
       location: location ?? this.location,
       category: category ?? this.category,
       isUrgent: isUrgent ?? this.isUrgent,

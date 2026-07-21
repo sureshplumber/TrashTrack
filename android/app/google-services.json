@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "981417554707",
+    "project_id": "trashtalk3003",
+    "storage_bucket": "trashtalk3003.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:981417554707:android:e95b0adb4fe74864bde0e6",
+        "android_client_info": {
+          "package_name": "com.example.binit"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBAcf2L7NJvrULrINDO2Tzm27N4FjkWszM"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

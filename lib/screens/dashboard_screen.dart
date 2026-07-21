@@ -1,9 +1,9 @@
-import 'dart:convert';
-import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import '../models/waste_report.dart';
-import '../services/local_storage.dart';
+import '../models/user_profile.dart';
+import '../services/firebase_service.dart';
 import '../theme/app_theme.dart';
+import '../widgets/report_image.dart';
 import 'add_report_screen.dart';
 import 'edit_report_screen.dart';
 import 'login_screen.dart';
@@ -16,40 +16,39 @@ class DashboardScreen extends StatefulWidget {
 }
 
 class _DashboardScreenState extends State<DashboardScreen> {
-  List<WasteReport> _reports = [];
-  bool _isLoading = true;
   String _activeTab = 'All'; // 'All', 'In Progress', 'Resolved'
-  String _activeUser = 'Resident Citizen';
+  String _scopeFilter = 'Community'; // 'Community' or 'Mine'
+  UserProfile? _userProfile;
 
   @override
   void initState() {
     super.initState();
-    _loadData();
+    _loadProfile();
   }
 
-  @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    _loadData();
-  }
-
-  Future<void> _loadData() async {
-    final userData = await LocalStorageService.getCurrentUser();
-    final data = await LocalStorageService.getAllReports();
-
-    // Sort reverse chronological
-    data.sort((a, b) => b.createdAt.compareTo(a.createdAt));
-
-    if (mounted) {
-      setState(() {
-        _activeUser = userData?['email'] ?? 'Resident Citizen';
-        _reports = data;
-        _isLoading = false;
-      });
+  Future<void> _loadProfile() async {
+    final user = FirebaseService.currentUser;
+    if (user != null) {
+      final profile = await FirebaseService.getUserProfile(user.uid);
+      if (mounted) {
+        setState(() {
+          _userProfile = profile;
+        });
+      }
     }
   }
 
-  void _withdrawReport(String id) {
+  Future<void> _logout() async {
+    await FirebaseService.signOut();
+    if (mounted) {
+      Navigator.of(context).pushAndRemoveUntil(
+        MaterialPageRoute(builder: (_) => const LoginScreen()),
+        (route) => false,
+      );
+    }
+  }
+
+  void _withdrawReport(WasteReport report) {
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -70,14 +69,13 @@ class _DashboardScreenState extends State<DashboardScreen> {
           ),
           ElevatedButton(
             style: ElevatedButton.styleFrom(
-              backgroundColor: AppColors.urgentDanger,
+              backgroundColor: AppColors.statusUrgent,
               foregroundColor: AppColors.primaryTextDark,
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
             ),
             onPressed: () async {
               Navigator.pop(ctx);
-              await LocalStorageService.deleteReport(id);
-              _loadData();
+              await FirebaseService.deleteReport(report.id);
             },
             child: const Text('Withdraw', style: TextStyle(fontWeight: FontWeight.bold)),
           ),
@@ -86,38 +84,26 @@ class _DashboardScreenState extends State<DashboardScreen> {
     );
   }
 
-  Future<void> _logout() async {
-    await LocalStorageService.logout();
-    if (mounted) {
-      Navigator.of(context).pushAndRemoveUntil(
-        MaterialPageRoute(
-          builder: (context) => LoginScreen(
-            onLoginSuccess: () {
-              Navigator.of(context).pushAndRemoveUntil(
-                MaterialPageRoute(builder: (_) => const TrashTrackWrapper()),
-                (route) => false,
-              );
-            },
-          ),
-        ),
-        (route) => false,
-      );
-    }
-  }
+  List<WasteReport> _filterReports(List<WasteReport> reports, String currentUserId) {
+    var filtered = reports;
 
-  List<WasteReport> get _filteredReports {
-    if (_activeTab == 'Resolved') {
-      return _reports.where((r) => r.status.toLowerCase() == 'resolved').toList();
-    } else if (_activeTab == 'In Progress') {
-      return _reports.where((r) => r.status.toLowerCase() == 'in progress').toList();
+    if (_scopeFilter == 'Mine') {
+      filtered = filtered.where((r) => r.userId == currentUserId).toList();
     }
-    return _reports;
+
+    if (_activeTab == 'Resolved') {
+      filtered = filtered.where((r) => r.status.toLowerCase() == 'resolved').toList();
+    } else if (_activeTab == 'In Progress') {
+      filtered = filtered.where((r) => r.status.toLowerCase() == 'in progress').toList();
+    }
+    return filtered;
   }
 
   @override
   Widget build(BuildContext context) {
-    final resolvedCount = _reports.where((r) => r.status.toLowerCase() == 'resolved').length;
-    final inProgressCount = _reports.where((r) => r.status.toLowerCase() == 'in progress').length;
+    final user = FirebaseService.currentUser;
+    final userId = user?.uid ?? '';
+    final displayName = _userProfile?.name ?? user?.displayName ?? user?.email ?? 'Citizen User';
 
     return Scaffold(
       backgroundColor: AppColors.citizenBackground,
@@ -134,15 +120,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
             Text(
               'Community Waste Monitoring & Resolution Tracking',
               style: TextStyle(fontSize: 11, color: AppColors.secondaryTextDark),
+              overflow: TextOverflow.ellipsis,
             ),
           ],
         ),
         actions: [
-          IconButton(
-            icon: const Icon(Icons.refresh, color: AppColors.primaryTextDark),
-            tooltip: 'Refresh Feed',
-            onPressed: _loadData,
-          ),
           IconButton(
             icon: const Icon(Icons.logout, color: AppColors.primaryTextDark),
             tooltip: 'Logout',
@@ -157,8 +139,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
           children: [
             UserAccountsDrawerHeader(
               decoration: const BoxDecoration(color: AppColors.primaryTextLight),
-              accountName: Text(_activeUser, style: const TextStyle(fontWeight: FontWeight.bold, color: AppColors.primaryTextDark)),
-              accountEmail: const Text('Registered Citizen User', style: TextStyle(color: AppColors.secondaryTextDark)),
+              accountName: Text(displayName, style: const TextStyle(fontWeight: FontWeight.bold, color: AppColors.primaryTextDark)),
+              accountEmail: Text(user?.email ?? '', style: const TextStyle(color: AppColors.secondaryTextDark)),
               currentAccountPicture: const CircleAvatar(
                 backgroundColor: AppColors.citizenBackground,
                 child: Icon(Icons.person, color: AppColors.primaryTextLight, size: 36),
@@ -166,55 +148,84 @@ class _DashboardScreenState extends State<DashboardScreen> {
             ),
             ListTile(
               leading: const Icon(Icons.dashboard, color: AppColors.primaryTextLight),
-              title: const Text('My Complaints Feed', style: TextStyle(color: AppColors.primaryTextLight, fontWeight: FontWeight.w600)),
+              title: const Text('Complaints Feed', style: TextStyle(color: AppColors.primaryTextLight, fontWeight: FontWeight.w600)),
               onTap: () => Navigator.pop(context),
             ),
             ListTile(
               leading: const Icon(Icons.add_a_photo, color: AppColors.primaryTextLight),
               title: const Text('File New Complaint', style: TextStyle(color: AppColors.primaryTextLight, fontWeight: FontWeight.w600)),
-              onTap: () async {
+              onTap: () {
                 Navigator.pop(context);
-                await Navigator.push(
+                Navigator.push(
                   context,
                   MaterialPageRoute(builder: (context) => const AddReportScreen()),
                 );
-                _loadData();
               },
             ),
             const Divider(color: AppColors.borderLight),
             ListTile(
-              leading: const Icon(Icons.logout, color: AppColors.urgentDanger),
-              title: const Text('Log Out', style: TextStyle(color: AppColors.urgentDanger, fontWeight: FontWeight.w600)),
+              leading: const Icon(Icons.logout, color: AppColors.statusUrgent),
+              title: const Text('Log Out', style: TextStyle(color: AppColors.statusUrgent, fontWeight: FontWeight.w600)),
               onTap: _logout,
             ),
           ],
         ),
       ),
-      body: _isLoading
-          ? const Center(child: CircularProgressIndicator(color: AppColors.primaryTextLight))
-          : Column(
-              children: [
-                // Top Community Action & Stats Banner
-                _buildHeaderBanner(inProgressCount: inProgressCount, resolvedCount: resolvedCount),
+      body: StreamBuilder<List<WasteReport>>(
+        stream: FirebaseService.getPublicReportsStream(),
+        builder: (context, snapshot) {
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return const Center(child: CircularProgressIndicator(color: AppColors.primaryTextLight));
+          }
 
-                // Filter Tabs Bar
-                _buildFilterTabs(),
-
-                // Complaints Feed List View
-                Expanded(
-                  child: _filteredReports.isEmpty
-                      ? _buildEmptyState()
-                      : ListView.builder(
-                          padding: const EdgeInsets.fromLTRB(16, 8, 16, 88),
-                          itemCount: _filteredReports.length,
-                          itemBuilder: (ctx, index) {
-                            final report = _filteredReports[index];
-                            return _buildCitizenReportCard(report);
-                          },
-                        ),
+          if (snapshot.hasError) {
+            return Center(
+              child: Padding(
+                padding: const EdgeInsets.all(16.0),
+                child: Text(
+                  'Error loading reports: ${snapshot.error}',
+                  style: const TextStyle(color: AppColors.statusUrgent),
+                  textAlign: TextAlign.center,
                 ),
-              ],
-            ),
+              ),
+            );
+          }
+
+          final reports = snapshot.data ?? [];
+          final filtered = _filterReports(reports, userId);
+
+          final resolvedCount = reports.where((r) => r.status.toLowerCase() == 'resolved').length;
+          final inProgressCount = reports.where((r) => r.status.toLowerCase() == 'in progress').length;
+
+          return Column(
+            children: [
+              // Top Community Action & Stats Banner
+              _buildHeaderBanner(
+                totalCount: reports.length,
+                inProgressCount: inProgressCount,
+                resolvedCount: resolvedCount,
+              ),
+
+              // Filter Tabs Bar
+              _buildFilterTabs(reports.length),
+
+              // Complaints Feed List View
+              Expanded(
+                child: filtered.isEmpty
+                    ? _buildEmptyState()
+                    : ListView.builder(
+                        padding: const EdgeInsets.fromLTRB(16, 8, 16, 88),
+                        itemCount: filtered.length,
+                        itemBuilder: (ctx, index) {
+                          final report = filtered[index];
+                          return _buildCitizenReportCard(report);
+                        },
+                      ),
+              ),
+            ],
+          );
+        },
+      ),
       floatingActionButton: FloatingActionButton.extended(
         backgroundColor: AppColors.primaryTextLight,
         elevation: 4,
@@ -223,18 +234,21 @@ class _DashboardScreenState extends State<DashboardScreen> {
           'REPORT WASTE SPOT',
           style: TextStyle(color: AppColors.primaryTextDark, fontWeight: FontWeight.bold),
         ),
-        onPressed: () async {
-          await Navigator.push(
+        onPressed: () {
+          Navigator.push(
             context,
             MaterialPageRoute(builder: (context) => const AddReportScreen()),
           );
-          _loadData();
         },
       ),
     );
   }
 
-  Widget _buildHeaderBanner({required int inProgressCount, required int resolvedCount}) {
+  Widget _buildHeaderBanner({
+    required int totalCount,
+    required int inProgressCount,
+    required int resolvedCount,
+  }) {
     return Container(
       width: double.infinity,
       decoration: const BoxDecoration(
@@ -273,30 +287,33 @@ class _DashboardScreenState extends State<DashboardScreen> {
                       Text(
                         'Spotted illegal dumping or overflow?',
                         style: TextStyle(color: AppColors.primaryTextDark, fontWeight: FontWeight.bold, fontSize: 13),
+                        overflow: TextOverflow.ellipsis,
                       ),
                       SizedBox(height: 2),
                       Text(
                         'Attach photo evidence & GPS coordinates to notify BBMP crews.',
                         style: TextStyle(color: AppColors.secondaryTextDark, fontSize: 11),
+                        overflow: TextOverflow.ellipsis,
+                        maxLines: 2,
                       ),
                     ],
                   ),
                 ),
+                const SizedBox(width: 8),
                 ElevatedButton(
                   style: ElevatedButton.styleFrom(
                     backgroundColor: AppColors.primaryTextDark,
                     foregroundColor: AppColors.primaryTextLight,
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                   ),
-                  onPressed: () async {
-                    await Navigator.push(
+                  onPressed: () {
+                    Navigator.push(
                       context,
                       MaterialPageRoute(builder: (context) => const AddReportScreen()),
                     );
-                    _loadData();
                   },
-                  child: const Text('FILE REPORT', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 11)),
+                  child: const Text('FILE REPORT', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 10)),
                 ),
               ],
             ),
@@ -306,11 +323,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceAround,
             children: [
-              _buildCounter('Total Reports', _reports.length.toString(), Icons.assignment, color: AppColors.primaryTextDark),
+              Expanded(child: _buildCounter('Total Reports', totalCount.toString(), Icons.assignment, color: AppColors.primaryTextDark)),
               Container(height: 20, width: 1, color: Colors.white24),
-              _buildCounter('In Progress', inProgressCount.toString(), Icons.hourglass_bottom, color: AppColors.statusInProgress),
+              Expanded(child: _buildCounter('In Progress', inProgressCount.toString(), Icons.hourglass_bottom, color: AppColors.statusInProgress)),
               Container(height: 20, width: 1, color: Colors.white24),
-              _buildCounter('Resolved ✅', resolvedCount.toString(), Icons.task_alt, color: AppColors.statusResolved),
+              Expanded(child: _buildCounter('Resolved ✅', resolvedCount.toString(), Icons.task_alt, color: AppColors.statusResolved)),
             ],
           ),
         ],
@@ -320,38 +337,80 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
   Widget _buildCounter(String label, String count, IconData icon, {required Color color}) {
     return Row(
+      mainAxisAlignment: MainAxisAlignment.center,
       children: [
-        Icon(icon, size: 18, color: color),
-        const SizedBox(width: 6),
-        Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              count,
-              style: const TextStyle(color: AppColors.primaryTextDark, fontWeight: FontWeight.bold, fontSize: 16),
-            ),
-            Text(
-              label,
-              style: const TextStyle(color: AppColors.secondaryTextDark, fontSize: 10),
-            ),
-          ],
+        Icon(icon, size: 16, color: color),
+        const SizedBox(width: 4),
+        Flexible(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                count,
+                style: const TextStyle(color: AppColors.primaryTextDark, fontWeight: FontWeight.bold, fontSize: 15),
+                overflow: TextOverflow.ellipsis,
+              ),
+              Text(
+                label,
+                style: const TextStyle(color: AppColors.secondaryTextDark, fontSize: 9),
+                overflow: TextOverflow.ellipsis,
+              ),
+            ],
+          ),
         ),
       ],
     );
   }
 
-  Widget _buildFilterTabs() {
+  Widget _buildFilterTabs(int totalCount) {
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
-      child: Row(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _buildTabChip('All', 'All Reports (${_reports.length})'),
-          const SizedBox(width: 8),
-          _buildTabChip('In Progress', 'In Progress'),
-          const SizedBox(width: 8),
-          _buildTabChip('Resolved', 'Resolved ✅'),
+          Row(
+            children: [
+              _buildScopeChip('Community', 'All Community'),
+              const SizedBox(width: 8),
+              _buildScopeChip('Mine', 'My Reports'),
+            ],
+          ),
+          const SizedBox(height: 8),
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(
+              children: [
+                _buildTabChip('All', 'All Statuses'),
+                const SizedBox(width: 8),
+                _buildTabChip('In Progress', 'In Progress'),
+                const SizedBox(width: 8),
+                _buildTabChip('Resolved', 'Resolved ✅'),
+              ],
+            ),
+          ),
         ],
       ),
+    );
+  }
+
+  Widget _buildScopeChip(String scopeKey, String label) {
+    final isSelected = _scopeFilter == scopeKey;
+    return ChoiceChip(
+      selected: isSelected,
+      label: Text(label),
+      labelStyle: TextStyle(
+        fontSize: 12,
+        fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+        color: isSelected ? AppColors.primaryTextDark : AppColors.primaryTextLight,
+      ),
+      selectedColor: AppColors.primaryTextLight,
+      backgroundColor: AppColors.citizenCardSurface,
+      side: BorderSide(color: isSelected ? AppColors.primaryTextLight : AppColors.borderLight),
+      onSelected: (selected) {
+        if (selected) {
+          setState(() => _scopeFilter = scopeKey);
+        }
+      },
     );
   }
 
@@ -399,20 +458,12 @@ class _DashboardScreenState extends State<DashboardScreen> {
       statusIcon = Icons.hourglass_top;
     }
 
-    Uint8List? decodedImage;
-    if (report.imageBase64 != null && report.imageBase64!.isNotEmpty) {
-      try {
-        decodedImage = base64Decode(report.imageBase64!);
-      } catch (_) {}
-    }
-
     return GestureDetector(
-      onTap: () async {
-        await Navigator.push(
+      onTap: () {
+        Navigator.push(
           context,
           MaterialPageRoute(builder: (context) => EditReportScreen(report: report)),
         );
-        _loadData();
       },
       child: Card(
         elevation: 2,
@@ -442,16 +493,20 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 children: [
                   Icon(statusIcon, color: statusTextColor, size: 18),
                   const SizedBox(width: 8),
-                  Text(
-                    statusText,
-                    style: TextStyle(
-                      color: statusTextColor,
-                      fontWeight: FontWeight.bold,
-                      fontSize: 12,
-                      letterSpacing: 0.3,
+                  Expanded(
+                    child: Text(
+                      statusText,
+                      style: TextStyle(
+                        color: statusTextColor,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 11,
+                        letterSpacing: 0.3,
+                      ),
+                      overflow: TextOverflow.ellipsis,
+                      maxLines: 1,
                     ),
                   ),
-                  const Spacer(),
+                  const SizedBox(width: 6),
                   Text(
                     report.id,
                     style: TextStyle(fontSize: 10, color: statusTextColor, fontWeight: FontWeight.bold),
@@ -461,7 +516,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                       decoration: BoxDecoration(
-                        color: AppColors.urgentDanger,
+                        color: AppColors.statusUrgent,
                         borderRadius: BorderRadius.circular(4),
                       ),
                       child: const Text(
@@ -492,19 +547,22 @@ class _DashboardScreenState extends State<DashboardScreen> {
                           borderRadius: BorderRadius.circular(8),
                           border: Border.all(color: AppColors.borderLight),
                         ),
-                        child: decodedImage != null
-                            ? ClipRRect(
-                                borderRadius: BorderRadius.circular(7),
-                                child: Image.memory(decodedImage, width: 85, height: 85, fit: BoxFit.cover),
-                              )
-                            : Column(
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                children: const [
-                                  Icon(Icons.delete_outline, color: AppColors.primaryTextLight, size: 30),
-                                  SizedBox(height: 2),
-                                  Text('Photo', style: TextStyle(fontSize: 10, color: AppColors.secondaryTextLight)),
-                                ],
-                              ),
+                        child: ClipRRect(
+                          borderRadius: BorderRadius.circular(7),
+                          child: buildReportImage(
+                            report.imageBase64,
+                            width: 85,
+                            height: 85,
+                            fallbackWidget: Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: const [
+                                Icon(Icons.delete_outline, color: AppColors.primaryTextLight, size: 30),
+                                SizedBox(height: 2),
+                                Text('Photo', style: TextStyle(fontSize: 10, color: AppColors.secondaryTextLight)),
+                              ],
+                            ),
+                          ),
+                        ),
                       ),
                       const SizedBox(width: 14),
 
@@ -515,19 +573,22 @@ class _DashboardScreenState extends State<DashboardScreen> {
                           children: [
                             Row(
                               children: [
-                                Container(
-                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                                  decoration: BoxDecoration(
-                                    color: AppColors.citizenBackground,
-                                    borderRadius: BorderRadius.circular(6),
-                                    border: Border.all(color: AppColors.borderLight),
-                                  ),
-                                  child: Text(
-                                    report.category,
-                                    style: const TextStyle(
-                                      color: AppColors.primaryTextLight,
-                                      fontWeight: FontWeight.bold,
-                                      fontSize: 11,
+                                Flexible(
+                                  child: Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                    decoration: BoxDecoration(
+                                      color: AppColors.citizenBackground,
+                                      borderRadius: BorderRadius.circular(6),
+                                      border: Border.all(color: AppColors.borderLight),
+                                    ),
+                                    child: Text(
+                                      report.category,
+                                      style: const TextStyle(
+                                        color: AppColors.primaryTextLight,
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 11,
+                                      ),
+                                      overflow: TextOverflow.ellipsis,
                                     ),
                                   ),
                                 ),
@@ -536,7 +597,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                             const SizedBox(height: 6),
                             Row(
                               children: [
-                                const Icon(Icons.location_on, color: AppColors.urgentDanger, size: 16),
+                                const Icon(Icons.location_on, color: AppColors.statusUrgent, size: 16),
                                 const SizedBox(width: 4),
                                 Expanded(
                                   child: Text(
@@ -546,6 +607,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
                                       fontSize: 14,
                                       color: AppColors.primaryTextLight,
                                     ),
+                                    overflow: TextOverflow.ellipsis,
+                                    maxLines: 1,
                                   ),
                                 ),
                               ],
@@ -556,12 +619,15 @@ class _DashboardScreenState extends State<DashboardScreen> {
                                 children: [
                                   const Icon(Icons.gps_fixed, size: 12, color: AppColors.primaryTextLight),
                                   const SizedBox(width: 4),
-                                  Text(
-                                    'GPS: ${report.latitude!.toStringAsFixed(4)}, ${report.longitude!.toStringAsFixed(4)}',
-                                    style: const TextStyle(
-                                      fontSize: 11,
-                                      color: AppColors.primaryTextLight,
-                                      fontWeight: FontWeight.w600,
+                                  Expanded(
+                                    child: Text(
+                                      'GPS: ${report.latitude!.toStringAsFixed(4)}, ${report.longitude!.toStringAsFixed(4)}',
+                                      style: const TextStyle(
+                                        fontSize: 11,
+                                        color: AppColors.primaryTextLight,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                      overflow: TextOverflow.ellipsis,
                                     ),
                                   ),
                                 ],
@@ -576,6 +642,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
                                   fontStyle: FontStyle.italic,
                                   color: AppColors.secondaryTextLight,
                                 ),
+                                overflow: TextOverflow.ellipsis,
+                                maxLines: 2,
                               ),
                             ],
                           ],
@@ -595,32 +663,36 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   Row(
                     mainAxisAlignment: MainAxisAlignment.end,
                     children: [
-                      OutlinedButton.icon(
-                        style: OutlinedButton.styleFrom(
-                          visualDensity: VisualDensity.compact,
-                          side: const BorderSide(color: AppColors.primaryTextLight),
+                      Flexible(
+                        child: OutlinedButton.icon(
+                          style: OutlinedButton.styleFrom(
+                            visualDensity: VisualDensity.compact,
+                            side: const BorderSide(color: AppColors.primaryTextLight),
+                          ),
+                          icon: const Icon(Icons.info_outline, size: 16, color: AppColors.primaryTextLight),
+                          label: Text(
+                            isResolved ? 'View Details (Locked)' : 'Edit Details',
+                            style: const TextStyle(fontSize: 11, color: AppColors.primaryTextLight),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          onPressed: () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (context) => EditReportScreen(report: report),
+                              ),
+                            );
+                          },
                         ),
-                        icon: const Icon(Icons.info_outline, size: 16, color: AppColors.primaryTextLight),
-                        label: Text(
-                          isResolved ? 'View Details (Locked)' : 'Edit Details',
-                          style: const TextStyle(fontSize: 12, color: AppColors.primaryTextLight),
-                        ),
-                        onPressed: () async {
-                          await Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (context) => EditReportScreen(report: report),
-                            ),
-                          );
-                          _loadData();
-                        },
                       ),
                       const SizedBox(width: 8),
-                      TextButton.icon(
-                        style: TextButton.styleFrom(visualDensity: VisualDensity.compact),
-                        icon: const Icon(Icons.delete_outline, size: 16, color: AppColors.urgentDanger),
-                        label: const Text('Withdraw', style: TextStyle(fontSize: 12, color: AppColors.urgentDanger)),
-                        onPressed: () => _withdrawReport(report.id),
+                      Flexible(
+                        child: TextButton.icon(
+                          style: TextButton.styleFrom(visualDensity: VisualDensity.compact),
+                          icon: const Icon(Icons.delete_outline, size: 16, color: AppColors.statusUrgent),
+                          label: const Text('Withdraw', style: TextStyle(fontSize: 11, color: AppColors.statusUrgent), overflow: TextOverflow.ellipsis),
+                          onPressed: () => _withdrawReport(report),
+                        ),
                       ),
                     ],
                   ),
@@ -700,6 +772,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
             fontWeight: isCurrent ? FontWeight.bold : FontWeight.normal,
             color: isCurrent ? stepColor : AppColors.secondaryTextLight,
           ),
+          overflow: TextOverflow.ellipsis,
         ),
       ],
     );
@@ -723,42 +796,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
           ),
         ],
       ),
-    );
-  }
-}
-
-/// Helper wrapper to handle clean navigation restart
-class TrashTrackWrapper extends StatelessWidget {
-  const TrashTrackWrapper({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    return FutureBuilder<Map<String, String?>?>(
-      future: LocalStorageService.getCurrentUser(),
-      builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Scaffold(
-            backgroundColor: AppColors.citizenBackground,
-            body: Center(child: CircularProgressIndicator(color: AppColors.primaryTextLight)),
-          );
-        }
-
-        final userData = snapshot.data;
-        if (userData == null || userData['email'] == null) {
-          return LoginScreen(onLoginSuccess: () {
-            Navigator.of(context).pushReplacement(
-              MaterialPageRoute(builder: (_) => const TrashTrackWrapper()),
-            );
-          });
-        }
-
-        final role = userData['role'];
-        if (role == 'official') {
-          return const OfficialPortalScreen();
-        }
-
-        return const DashboardScreen();
-      },
     );
   }
 }
